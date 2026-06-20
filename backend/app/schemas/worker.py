@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-
+from typing import Optional
 
 class WorkerCreate(BaseModel):
     user_id: str
@@ -21,6 +21,11 @@ class WorkerResponse(BaseModel):
     verification_status: str
     verification_level: str
     availability_status: str
+    profile_photo_url: Optional[str] = None
+id_photo_url: Optional[str] = None
+average_rating: float = 0
+total_reviews: int = 0
+completed_jobs: int = 0
 
     # app/models/worker.py
 @property

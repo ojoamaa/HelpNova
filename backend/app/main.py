@@ -25,6 +25,8 @@ from app.api.job_assignment.routes import router as assignment_router
 
 from app.api.auto_matching.routes import router as auto_matching_router
 
+from app.api.reviews.routes import router as reviews_router
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -42,6 +44,7 @@ app.include_router(admin_router)
 app.include_router(matching_router)
 app.include_router(assignment_router)
 app.include_router(auto_matching_router)
+app.include_router(reviews_router)
 
 @app.get("/")
 def root():

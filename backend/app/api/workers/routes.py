@@ -10,6 +10,8 @@ from app.schemas.worker_update import WorkerAvailabilityUpdate
 from app.services.worker_service import update_worker_availability
 from app.models.worker import Worker
 
+from app.models.worker_review import WorkerReview
+from app.models.job_assignment import JobAssignment
 
 router = APIRouter(
     prefix="/workers",
@@ -53,3 +55,42 @@ def update_availability(
         )
 
     return worker
+
+@router.get("/{worker_id}/reputation")
+def get_worker_reputation(
+    worker_id: str,
+    db: Session = Depends(get_db)
+):
+    assignments = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.worker_id == worker_id)
+        .all()
+    )
+
+    assignment_ids = [assignment.id for assignment in assignments]
+
+    reviews = (
+        db.query(WorkerReview)
+        .filter(WorkerReview.assignment_id.in_(assignment_ids))
+        .all()
+    )
+
+    completed_jobs = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.worker_id == worker_id)
+        .filter(JobAssignment.completed_at != None)
+        .count()
+    )
+
+    total_reviews = len(reviews)
+
+    average_rating = 0
+    if total_reviews > 0:
+        average_rating = sum(review.rating for review in reviews) / total_reviews
+
+    return {
+        "worker_id": worker_id,
+        "average_rating": round(average_rating, 1),
+        "total_reviews": total_reviews,
+        "completed_jobs": completed_jobs
+    }

@@ -7,6 +7,9 @@ from app.core.database import Base
 class Worker(Base):
     __tablename__ = "workers"
 
+    profile_photo_url = Column(String, nullable=True)
+    id_photo_url = Column(String, nullable=True)
+
     id = Column(String, primary_key=True)
     user_id = Column(String, ForeignKey("users.id"), unique=True)
 

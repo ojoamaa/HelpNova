@@ -6,6 +6,8 @@ from app.core.database import Base
 class User(Base):
     __tablename__ = "users"
 
+    profile_photo_url = Column(String, nullable=True)
+
     id = Column(String, primary_key=True)
 
     full_name = Column(String, nullable=False)
