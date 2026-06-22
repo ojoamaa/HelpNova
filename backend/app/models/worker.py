@@ -9,6 +9,19 @@ class Worker(Base):
 
     profile_photo_url = Column(String, nullable=True)
     id_photo_url = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    profile_photo = Column(String, nullable=True)
+    full_name = Column(String, nullable=False)
+
+    address = Column(String, nullable=True)
+    national_id_number = Column(String, nullable=True)
+    nin = Column(String, nullable=True)
+    bvn = Column(String, nullable=True)
+
+    next_of_kin_name = Column(String, nullable=True)
+    next_of_kin_phone = Column(String, nullable=True)
+
+    verification_note = Column(String, nullable=True)
 
     id = Column(String, primary_key=True)
     user_id = Column(String, ForeignKey("users.id"), unique=True)

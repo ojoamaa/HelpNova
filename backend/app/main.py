@@ -27,6 +27,27 @@ from app.api.auto_matching.routes import router as auto_matching_router
 
 from app.api.reviews.routes import router as reviews_router
 
+from app.api.payments.routes import router as payments_router
+
+from app.models.payment import Payment
+
+from app.models.wallet import Wallet, WalletTransaction
+
+from app.api.wallet.routes import router as wallet_router
+
+from app.api.withdrawals.routes import router as withdrawal_router
+from app.models.withdrawal import Withdrawal
+
+from app.api.dashboard.routes import router as dashboard_router
+
+from app.api.search.routes import router as search_router
+
+from app.models.job_notification import JobNotification
+
+from app.api.job_notifications.routes import router as job_notification_router
+
+from app.api.customer_tracking.routes import router as customer_tracking_router
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -45,6 +66,13 @@ app.include_router(matching_router)
 app.include_router(assignment_router)
 app.include_router(auto_matching_router)
 app.include_router(reviews_router)
+app.include_router(payments_router)
+app.include_router(wallet_router)
+app.include_router(withdrawal_router)
+app.include_router(dashboard_router)
+app.include_router(search_router)
+app.include_router(job_notification_router)
+app.include_router(customer_tracking_router)
 
 @app.get("/")
 def root():

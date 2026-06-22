@@ -36,3 +36,25 @@ def verify_worker(
         )
 
     return worker
+
+@router.patch("/workers/{worker_id}/verify")
+def verify_worker(
+    worker_id: str,
+    update_data: WorkerVerificationUpdate,
+    db: Session = Depends(get_db)
+):
+    worker = update_worker_verification(
+        db=db,
+        worker_id=worker_id,
+        verification_status=update_data.verification_status,
+        verification_level=update_data.verification_level,
+        verification_note=update_data.verification_note
+    )
+
+    if not worker:
+        raise HTTPException(
+            status_code=404,
+            detail="Worker not found"
+        )
+
+    return worker

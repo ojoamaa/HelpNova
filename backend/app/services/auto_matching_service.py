@@ -6,8 +6,25 @@ from app.models.service_category import ServiceCategory
 from app.models.skill_assessment import SkillAssessment
 
 
-def calculate_match_score(worker, skill):
+def calculate_location_score(worker, job):
     score = 0
+
+    if worker.state and job.state and worker.state.lower() == job.state.lower():
+        score += 20
+
+    if worker.city and job.city and worker.city.lower() == job.city.lower():
+        score += 30
+
+    if worker.area and job.area and worker.area.lower() == job.area.lower():
+        score += 40
+
+    return score
+
+
+def calculate_match_score(worker, job, skill=None):
+    score = 0
+
+    score += calculate_location_score(worker, job)
 
     if worker.verification_status == "approved":
         score += 30
@@ -22,10 +39,14 @@ def calculate_match_score(worker, skill):
     elif worker.verification_level == "platinum":
         score += 30
 
+    if worker.average_rating:
+        score += min(worker.average_rating * 5, 25)
+
+    if worker.completed_jobs:
+        score += min(worker.completed_jobs, 20)
+
     if skill:
         score += min(skill.assessment_score, 20)
-
-    score += min(worker.completed_jobs, 10)
 
     return score
 
@@ -34,71 +55,61 @@ def auto_match_job(db: Session, job_id: str):
     job = db.query(Job).filter(Job.id == job_id).first()
 
     if not job:
-        return None
-
-    job_category_id = str(job.category_id).strip()
+        return {
+            "message": "Job not found",
+            "matches": []
+        }
 
     category = (
         db.query(ServiceCategory)
-        .filter(ServiceCategory.id == job_category_id)
+        .filter(ServiceCategory.id == job.category_id)
         .first()
     )
 
     if not category:
         return {
-            "job_id": job.job_id,
-            "job_category_id": job_category_id,
+            "job_id": job.id,
+            "category_id": job.category_id,
             "message": "Category not found",
             "matches": []
         }
 
-    print("========== AUTO MATCH DEBUG ==========")
-    print("JOB ID:", job.id)
-    print("JOB CATEGORY ID:", job.category_id)
-    print("CATEGORY NAME:", category.name)
-    print("JOB CITY:", job.city)
-
     workers = (
         db.query(Worker)
         .filter(Worker.profession == category.name)
-        .filter(Worker.city == job.city)
-        .filter(Worker.availability_status == "online")
         .filter(Worker.verification_status == "approved")
+        .filter(Worker.availability_status == "online")
         .all()
     )
-
-    print("MATCHED WORKERS:", len(workers))
 
     results = []
 
     for worker in workers:
-        print(
-            "WORKER:",
-            worker.id,
-            worker.profession,
-            worker.city,
-            worker.availability_status,
-            worker.verification_status
-        )
-
         skill = (
             db.query(SkillAssessment)
             .filter(SkillAssessment.worker_id == worker.id)
-            .filter(SkillAssessment.category_id == job_category_id)
+            .filter(SkillAssessment.category_id == job.category_id)
             .first()
         )
 
-        score = calculate_match_score(worker, skill)
+        location_score = calculate_location_score(worker, job)
+        total_score = calculate_match_score(worker, job, skill)
 
         results.append({
-            "worker_id": worker.worker_id,
+            "worker_id": worker.id,
             "user_id": worker.user_id,
+            "full_name": worker.full_name,
             "profession": worker.profession,
+            "state": worker.state,
+            "city": worker.city,
             "area": worker.area,
+            "verification_status": worker.verification_status,
             "verification_level": worker.verification_level,
+            "availability_status": worker.availability_status,
             "rating": worker.average_rating,
             "completed_jobs": worker.completed_jobs,
-            "match_score": score
+            "location_score": location_score,
+            "match_score": total_score
         })
 
     results = sorted(
@@ -108,8 +119,8 @@ def auto_match_job(db: Session, job_id: str):
     )
 
     return {
-        "job_id": job.job_id,
-        "category_id": job_category_id,
+        "job_id": job.id,
+        "category_id": job.category_id,
         "category": category.name,
         "job_type": job.job_type,
         "location": {
@@ -117,5 +128,7 @@ def auto_match_job(db: Session, job_id: str):
             "city": job.city,
             "area": job.area
         },
+        "total_matches": len(results),
+        "top_match": results[0] if results else None,
         "top_matches": results[:5]
     }

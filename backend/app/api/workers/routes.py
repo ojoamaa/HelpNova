@@ -13,6 +13,12 @@ from app.models.worker import Worker
 from app.models.worker_review import WorkerReview
 from app.models.job_assignment import JobAssignment
 
+from app.services.worker_service import (
+    create_worker_profile,
+    update_worker_availability,
+    get_workers_with_user_details,
+)
+
 router = APIRouter(
     prefix="/workers",
     tags=["Workers"]
@@ -31,7 +37,7 @@ def register_worker(
 
 @router.get("/")
 def list_workers(db: Session = Depends(get_db)):
-    return db.query(Worker).all()
+    return get_workers_with_user_details(db)
 
 @router.patch(
     "/{worker_id}/availability",
@@ -55,6 +61,33 @@ def update_availability(
         )
 
     return worker
+
+@router.get("/{worker_id}")
+def get_worker(worker_id: str, db: Session = Depends(get_db)):
+    worker = (
+        db.query(Worker)
+        .filter(Worker.id == worker_id)
+        .first()
+    )
+
+    if not worker:
+        raise HTTPException(
+            status_code=404,
+            detail="Worker not found"
+        )
+
+    return worker
+
+@router.get("/user/{user_id}")
+def get_worker_by_user_id(
+    user_id: str,
+    db: Session = Depends(get_db)
+):
+    return (
+        db.query(Worker)
+        .filter(Worker.user_id == user_id)
+        .first()
+    )
 
 @router.get("/{worker_id}/reputation")
 def get_worker_reputation(
