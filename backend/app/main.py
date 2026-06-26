@@ -48,8 +48,39 @@ from app.api.job_notifications.routes import router as job_notification_router
 
 from app.api.customer_tracking.routes import router as customer_tracking_router
 
+from app.api.location.routes import router as location_router
+
+from app.api.live_tracking.routes import router as live_tracking_router
+
+from app.api.job_timeline.routes import router as job_timeline_router
+
 Base.metadata.create_all(bind=engine)
 
+from app.api.customer_history.routes import router as customer_history_router
+
+from app.api.disputes.routes import router as disputes_router
+
+from app.models.dispute import Dispute
+
+from app.api.notifications.routes import router as notifications_router
+
+from app.api.messages.routes import router as messages_router
+
+from app.models.message import Message
+
+from app.api.trust.routes import router as trust_router
+
+from app.models.receipt import Receipt
+
+from app.api.receipts.routes import router as receipts_router
+
+from app.api.job_completion.routes import router as job_completion_router
+
+from app.api.dashboard.routes import router as dashboard_router
+
+from app.api.chatbot.routes import router as chatbot_router
+
+Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="HelpNova API",
     version="1.0.0"
@@ -73,6 +104,18 @@ app.include_router(dashboard_router)
 app.include_router(search_router)
 app.include_router(job_notification_router)
 app.include_router(customer_tracking_router)
+app.include_router(location_router)
+app.include_router(live_tracking_router)
+app.include_router(job_timeline_router)
+app.include_router(customer_history_router)
+app.include_router(disputes_router)
+app.include_router(notifications_router)
+app.include_router(messages_router)
+app.include_router(trust_router)
+app.include_router(receipts_router)
+app.include_router(job_completion_router)
+app.include_router(dashboard_router)
+app.include_router(chatbot_router)
 
 @app.get("/")
 def root():

@@ -83,3 +83,24 @@ def list_withdrawals(db: Session):
 
 def list_worker_withdrawals(db: Session, worker_id: str):
     return db.query(Withdrawal).filter(Withdrawal.worker_id == worker_id).all()
+
+def mark_withdrawal_paid(db: Session, withdrawal_id: str):
+    withdrawal = (
+        db.query(Withdrawal)
+        .filter(Withdrawal.id == withdrawal_id)
+        .first()
+    )
+
+    if not withdrawal:
+        return None
+
+    if withdrawal.status != "approved":
+        return "not_approved"
+
+    withdrawal.status = "paid"
+    withdrawal.paid_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(withdrawal)
+
+    return withdrawal

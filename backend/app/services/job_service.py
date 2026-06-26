@@ -20,6 +20,8 @@ def create_job(
         state=job_data.state,
         city=job_data.city,
         area=job_data.area,
+        customer_latitude=job_data.customer_latitude,
+        customer_longitude=job_data.customer_longitude,
 
         job_type=job_data.job_type,
 employment_type=job_data.employment_type,

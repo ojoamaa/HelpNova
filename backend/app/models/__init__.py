@@ -5,3 +5,5 @@ from app.models.service_category import ServiceCategory
 from app.models.skill_assessment import SkillAssessment
 from app.models.job import Job
 from app.models.job_assignment import JobAssignment
+from app.models.worker_location import WorkerLocation
+from app.models.job_photo import JobPhoto

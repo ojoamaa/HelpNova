@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.services.withdrawal_service import mark_withdrawal_paid
 
 from app.core.database import get_db
 from app.schemas.withdrawal import WithdrawalCreate
@@ -92,3 +93,29 @@ def get_worker_withdrawals(
     db: Session = Depends(get_db)
 ):
     return list_worker_withdrawals(db, worker_id)
+
+@router.patch("/{withdrawal_id}/mark-paid")
+def mark_paid(
+    withdrawal_id: str,
+    db: Session = Depends(get_db)
+):
+    withdrawal = mark_withdrawal_paid(db, withdrawal_id)
+
+    if not withdrawal:
+        raise HTTPException(
+            status_code=404,
+            detail="Withdrawal not found"
+        )
+
+    if withdrawal == "not_approved":
+        raise HTTPException(
+            status_code=400,
+            detail="Withdrawal must be approved before marking as paid"
+        )
+
+    return {
+        "withdrawal_id": withdrawal.id,
+        "status": withdrawal.status,
+        "paid_at": withdrawal.paid_at,
+        "message": "Withdrawal marked as paid successfully"
+    }

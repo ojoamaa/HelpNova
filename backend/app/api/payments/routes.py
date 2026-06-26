@@ -3,6 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.payment import PaymentCreate
+from app.models.payment import Payment
+from app.models.receipt import Receipt
+from app.models.job import Job
 from app.services.payment_service import (
     create_payment_record,
     mark_payment_paid,
@@ -74,6 +77,12 @@ def release_payment(
     if payment == "already_released":
         raise HTTPException(status_code=400, detail="Payment has already been released")
 
+    if payment == "worker_not_found":
+       raise HTTPException(
+        status_code=400,
+        detail="No worker found for this payment/job"
+    )
+
     return {
         "payment_id": payment.id,
         "status": payment.status,
@@ -99,3 +108,38 @@ def worker_earnings(
 @router.get("/admin/revenue")
 def admin_revenue(db: Session = Depends(get_db)):
     return get_admin_revenue(db)
+
+@router.get("/{payment_id}")
+def payment_summary(
+    payment_id: str,
+    db: Session = Depends(get_db)
+):
+    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    job = db.query(Job).filter(Job.id == payment.job_id).first()
+
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.payment_id == payment.id)
+        .first()
+    )
+
+    return {
+        "payment_id": payment.id,
+        "payment_reference": payment.payment_reference,
+        "job_id": payment.job_id,
+        "job_title": job.title if job else None,
+        "customer_id": payment.customer_id,
+        "worker_id": payment.worker_id,
+        "amount": payment.amount,
+        "platform_fee": payment.platform_fee,
+        "worker_amount": payment.worker_amount,
+        "status": payment.status,
+        "receipt_number": receipt.receipt_number if receipt else None,
+        "paid_at": payment.paid_at,
+        "released_at": payment.released_at,
+        "created_at": payment.created_at,
+    }

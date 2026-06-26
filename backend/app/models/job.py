@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Float
 from datetime import datetime
 
 from app.core.database import Base
@@ -40,3 +40,5 @@ class Job(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
    
+    customer_latitude = Column(Float, nullable=True)
+    customer_longitude = Column(Float, nullable=True)

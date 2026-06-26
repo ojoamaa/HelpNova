@@ -59,7 +59,7 @@ def update_assignment_status(db: Session, assignment_id: str, status: str):
         assignment.accepted_at = datetime.utcnow()
 
         if job:
-            job.status = "in_progress"
+            job.status = "assigned"
 
     elif status == "rejected":
         assignment.rejected_at = datetime.utcnow()
@@ -77,16 +77,16 @@ def update_assignment_status(db: Session, assignment_id: str, status: str):
                 next_worker = (
                     db.query(Worker)
                     .filter(Worker.profession == category.name)
+                    .filter(Worker.city == job.city)
                     .filter(Worker.availability_status == "online")
                     .filter(Worker.verification_status == "approved")
                     .filter(Worker.id != assignment.worker_id)
-                    .filter(Worker.user_id != assignment.worker_id)
                     .order_by(
-                          Worker.average_rating.desc(),
-                          Worker.completed_jobs.desc()
+                        Worker.average_rating.desc(),
+                        Worker.completed_jobs.desc()
                     )
                     .first()
-            )
+                )
 
             if next_worker:
                 new_assignment = JobAssignment(

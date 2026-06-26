@@ -23,6 +23,9 @@ class JobCreate(BaseModel):
     feeding_included: str = "no"
     background_check_required: str = "no"
 
+    customer_latitude: float | None = None
+    customer_longitude: float | None = None
+
 
 class JobResponse(BaseModel):
     job_id: str
@@ -47,5 +50,7 @@ class JobResponse(BaseModel):
     feeding_included: str
     background_check_required: str
 
+    customer_latitude: float | None = None
+    customer_longitude: float | None = None
     class Config:
         from_attributes = True
