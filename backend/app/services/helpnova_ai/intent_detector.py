@@ -4,65 +4,144 @@ class IntentDetector:
         text = message.lower().strip()
 
         intents = {
-            "create_job": [
-                "book",
-                "need",
-                "find",
-                "service",
-                "plumber",
-                "electrician",
-                "cleaner",
-                "mechanic"
-            ],
-
-            "job_status": [
+            "jobs": [
+                "my jobs",
+                "show my jobs",
+                "completed jobs",
+                "pending jobs",
+                "assigned jobs",
+                "active jobs",
                 "job status",
                 "track",
                 "where is my worker",
-                "progress"
+                "progress",
+                "jobs",
+                "job",
             ],
+
+            "create_job": [
+
+    # booking
+    "book",
+    "need",
+    "find",
+    "hire",
+    "repair",
+    "fix",
+    "install",
+    "replace",
+
+    # plumbing
+    "plumber",
+    "pipe",
+    "leak",
+    "leaking",
+    "sink",
+    "tap",
+    "toilet",
+    "water",
+    "drain",
+    "bathroom",
+
+    # electrical
+    "electrician",
+    "socket",
+    "switch",
+    "wire",
+    "light",
+    "fan",
+    "generator",
+
+    # cleaning
+    "cleaner",
+    "cleaning",
+
+    # mechanical
+    "mechanic",
+    "car",
+    "engine",
+
+    # appliance
+    "ac",
+    "air conditioner",
+    "fridge",
+    "washing machine",
+
+    # painting
+    "paint",
+    "painting",
+
+    # carpentry
+    "door",
+    "window",
+    "wood",
+
+    # roofing
+    "roof",
+
+    # generic
+    "fault",
+    "problem",
+    "broken",
+    "damage",
+    "repair service"
+
+],
 
             "payment": [
                 "payment",
                 "paid",
                 "escrow",
-                "invoice"
+                "invoice",
             ],
 
             "receipt": [
                 "receipt",
                 "download receipt",
                 "verify receipt",
-                "qr"
+                "qr",
             ],
 
             "wallet": [
                 "wallet",
                 "earnings",
                 "balance",
-                "withdraw"
+                "withdraw",
             ],
 
             "worker": [
                 "worker",
                 "artisan",
-                "provider"
+                "provider",
             ],
 
             "dashboard": [
                 "dashboard",
                 "revenue",
                 "analytics",
-                "report"
+                "report",
+            ],
+
+            "confirm": [
+                 "yes",
+                 "go ahead",
+                 "create it",
+                 "proceed",
+                 "confirm",
+                 "continue",
+                 "submit",
+                 "okay",
+                 "ok"
             ],
 
             "dispute": [
                 "complaint",
                 "dispute",
                 "problem",
-                "refund"
-            ]
+                "refund",
+            ],
         }
+
 
         for intent, keywords in intents.items():
             for keyword in keywords:

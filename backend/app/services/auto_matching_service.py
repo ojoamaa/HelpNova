@@ -22,9 +22,7 @@ def calculate_location_score(worker, job):
 
 
 def calculate_match_score(worker, job, skill=None):
-    score = 0
-
-    score += calculate_location_score(worker, job)
+    score = calculate_location_score(worker, job)
 
     if worker.verification_status == "approved":
         score += 30
@@ -46,7 +44,7 @@ def calculate_match_score(worker, job, skill=None):
         score += min(worker.completed_jobs, 20)
 
     if skill:
-        score += min(skill.assessment_score, 20)
+        score += min(skill.assessment_score or 0, 20)
 
     return score
 
@@ -56,8 +54,11 @@ def auto_match_job(db: Session, job_id: str):
 
     if not job:
         return {
+            "job_id": job_id,
             "message": "Job not found",
-            "matches": []
+            "total_matches": 0,
+            "top_match": None,
+            "top_matches": []
         }
 
     category = (
@@ -71,26 +72,31 @@ def auto_match_job(db: Session, job_id: str):
             "job_id": job.id,
             "category_id": job.category_id,
             "message": "Category not found",
-            "matches": []
+            "total_matches": 0,
+            "top_match": None,
+            "top_matches": []
         }
 
-    workers = (
-        db.query(Worker)
-        .filter(Worker.profession == category.name)
-        .filter(Worker.verification_status == "approved")
-        .filter(Worker.availability_status == "online")
+    skill_rows = (
+        db.query(SkillAssessment)
+        .filter(SkillAssessment.category_id == job.category_id)
+        .filter(SkillAssessment.status == "approved")
         .all()
     )
 
     results = []
 
-    for worker in workers:
-        skill = (
-            db.query(SkillAssessment)
-            .filter(SkillAssessment.worker_id == worker.id)
-            .filter(SkillAssessment.category_id == job.category_id)
+    for skill in skill_rows:
+        worker = (
+            db.query(Worker)
+            .filter(Worker.id == skill.worker_id)
+            .filter(Worker.verification_status == "approved")
+            .filter(Worker.availability_status == "online")
             .first()
         )
+
+        if not worker:
+            continue
 
         location_score = calculate_location_score(worker, job)
         total_score = calculate_match_score(worker, job, skill)
@@ -108,6 +114,8 @@ def auto_match_job(db: Session, job_id: str):
             "availability_status": worker.availability_status,
             "rating": worker.average_rating,
             "completed_jobs": worker.completed_jobs,
+            "skill_level": skill.skill_level,
+            "assessment_score": skill.assessment_score,
             "location_score": location_score,
             "match_score": total_score
         })

@@ -80,6 +80,18 @@ from app.api.dashboard.routes import router as dashboard_router
 
 from app.api.chatbot.routes import router as chatbot_router
 
+from app.api.job_acceptance.routes import router as job_acceptance_router
+
+from app.api.redispatch.routes import router as redispatch_router
+
+from app.api.worker_dashboard.routes import router as worker_dashboard_router
+
+from app.api.job_lifecycle.routes import router as job_lifecycle_router
+
+from app.api.job_review.routes import router as job_review_router
+
+from app.api.escrow.routes import router as escrow_router
+
 Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="HelpNova API",
@@ -116,6 +128,12 @@ app.include_router(receipts_router)
 app.include_router(job_completion_router)
 app.include_router(dashboard_router)
 app.include_router(chatbot_router)
+app.include_router(job_acceptance_router)
+app.include_router(redispatch_router)
+app.include_router(worker_dashboard_router)
+app.include_router(job_lifecycle_router)
+app.include_router(job_review_router)
+app.include_router(escrow_router)
 
 @app.get("/")
 def root():

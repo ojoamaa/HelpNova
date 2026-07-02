@@ -15,6 +15,7 @@ class Job(Base):
 
     customer_id = Column(String, nullable=False)
     category_id = Column(String, nullable=False)
+    assigned_worker_id = Column(String, nullable=True)
 
     title = Column(String, nullable=False)
     description = Column(String, nullable=True)

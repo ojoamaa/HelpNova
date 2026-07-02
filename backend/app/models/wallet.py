@@ -14,6 +14,11 @@ class Wallet(Base):
     available_balance = Column(Float, default=0)
     pending_balance = Column(Float, default=0)
     total_earned = Column(Float, default=0)
+    currency = Column(String, default="NGN")
+
+    status = Column(String, default="active")
+
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
@@ -26,6 +31,15 @@ class WalletTransaction(Base):
     wallet_id = Column(String, nullable=False)
     worker_id = Column(String, nullable=False)
     payment_id = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+
+    reference = Column(String, nullable=True)
+
+    job_id = Column(String, nullable=True)
+
+    commission = Column(Float, default=0)
+
+    balance_after = Column(Float, default=0)
 
     transaction_type = Column(String, nullable=False)  
     # pending_credit, release_credit, withdrawal, reversal

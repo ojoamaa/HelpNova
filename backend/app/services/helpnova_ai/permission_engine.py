@@ -5,16 +5,20 @@ class PermissionEngine:
         "customer": [
             "create_job",
             "job_status",
+            "jobs",
             "payment",
             "receipt",
-            "dispute"
+            "dispute",
+            "confirm"
         ],
 
         "worker": [
             "wallet",
             "job_status",
+            "jobs",
             "payment",
-            "receipt"
+            "receipt",
+            "confirm"
         ],
 
         "admin": [
@@ -22,13 +26,13 @@ class PermissionEngine:
             "payment",
             "worker",
             "dispute",
-            "receipt"
+            "receipt",
+            "jobs",
+            "confirm"
         ]
     }
 
     @classmethod
     def allowed(cls, role, intent):
-
         allowed = cls.permissions.get(role, [])
-
         return intent in allowed or intent == "general"
