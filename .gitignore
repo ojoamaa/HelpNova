@@ -5,3 +5,4 @@ __pycache__/
 .env
 venv/
 backend/venv/
+generated_receipts/
