@@ -7,6 +7,10 @@ from app.models import User
 
 from app.api.auth.routes import router as auth_router
 
+from app.api.ai_recommendation.routes import (
+    router as ai_recommendation_router,
+)
+
 from app.api.workers.routes import router as workers_router
 
 from app.api.companies.routes import router as companies_router
@@ -92,11 +96,48 @@ from app.api.job_review.routes import router as job_review_router
 
 from app.api.escrow.routes import router as escrow_router
 
-Base.metadata.create_all(bind=engine)
+from app.api.finance_dashboard.routes import router as finance_dashboard_router
+
+from app.api.analytics.routes import router as analytics_router
+
+from app.api.worker_performance.routes import router as worker_performance_router
+
+from app.api.customer_analytics.routes import router as customer_analytics_router
+
+from app.api.job_operations.routes import router as job_operations_router
+
+from app.api.live_operations.routes import router as live_operations_router
+
+from app.api.financial_intelligence.routes import (
+    router as financial_intelligence_router,
+)
+
+from app.api.executive_dashboard.routes import (
+    router as executive_dashboard_router,
+)
+
+from app.api.ai_operations_assistant.routes import (
+    router as ai_operations_assistant_router,
+)
+
 app = FastAPI(
     title="HelpNova API",
     version="1.0.0"
 )
+
+from app.api.ai_pricing.routes import router as ai_pricing_router
+
+from app.api.ai_fraud.routes import (
+    router as ai_fraud_router,
+)
+
+from app.api.ai_customer_trust.routes import router as ai_customer_trust_router
+
+from app.api.ai_worker_reliability.routes import router as ai_worker_reliability_router
+
+from app.api.ai_predictive_analytics.routes import router as ai_predictive_analytics_router
+
+Base.metadata.create_all(bind=engine)
 
 app.include_router(auth_router)
 app.include_router(workers_router)
@@ -126,7 +167,6 @@ app.include_router(messages_router)
 app.include_router(trust_router)
 app.include_router(receipts_router)
 app.include_router(job_completion_router)
-app.include_router(dashboard_router)
 app.include_router(chatbot_router)
 app.include_router(job_acceptance_router)
 app.include_router(redispatch_router)
@@ -134,6 +174,21 @@ app.include_router(worker_dashboard_router)
 app.include_router(job_lifecycle_router)
 app.include_router(job_review_router)
 app.include_router(escrow_router)
+app.include_router(finance_dashboard_router)
+app.include_router(analytics_router)
+app.include_router(worker_performance_router)
+app.include_router(customer_analytics_router)
+app.include_router(job_operations_router)
+app.include_router(live_operations_router)
+app.include_router(financial_intelligence_router)
+app.include_router(executive_dashboard_router)
+app.include_router(ai_recommendation_router)
+app.include_router(ai_pricing_router)
+app.include_router(ai_fraud_router)
+app.include_router(ai_customer_trust_router)
+app.include_router(ai_worker_reliability_router)
+app.include_router(ai_predictive_analytics_router)
+app.include_router(ai_operations_assistant_router)
 
 @app.get("/")
 def root():
