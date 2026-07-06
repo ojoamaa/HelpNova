@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from sqlalchemy.orm import Session
 
@@ -9,13 +10,15 @@ def get_or_create_wallet(db: Session, worker_id: str):
 
     if not wallet:
         wallet = Wallet(
+            id=str(uuid.uuid4()),
             worker_id=worker_id,
             available_balance=0,
             pending_balance=0,
             total_earned=0,
             currency="NGN",
             status="active",
-            updated_at=datetime.utcnow()
+            updated_at=datetime.utcnow(),
+            created_at=datetime.utcnow(),
         )
         db.add(wallet)
         db.commit()
@@ -41,6 +44,7 @@ def add_pending_balance(db: Session, worker_id: str, payment_id: str, amount: fl
     wallet.updated_at = datetime.utcnow()
 
     tx = WalletTransaction(
+        id=str(uuid.uuid4()),
         wallet_id=wallet.id,
         worker_id=worker_id,
         payment_id=payment_id,
@@ -49,7 +53,7 @@ def add_pending_balance(db: Session, worker_id: str, payment_id: str, amount: fl
         status="success",
         description="Escrow amount held pending job completion",
         reference=payment_id,
-        balance_after=wallet.pending_balance
+        balance_after=wallet.pending_balance,
     )
 
     db.add(tx)
@@ -82,6 +86,7 @@ def release_pending_balance(db: Session, worker_id: str, payment_id: str, amount
     wallet.updated_at = datetime.utcnow()
 
     tx = WalletTransaction(
+        id=str(uuid.uuid4()),
         wallet_id=wallet.id,
         worker_id=worker_id,
         payment_id=payment_id,
@@ -90,7 +95,7 @@ def release_pending_balance(db: Session, worker_id: str, payment_id: str, amount
         status="success",
         description="Escrow released to worker wallet",
         reference=payment_id,
-        balance_after=wallet.available_balance
+        balance_after=wallet.available_balance,
     )
 
     db.add(tx)

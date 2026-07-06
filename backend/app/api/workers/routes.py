@@ -11,6 +11,7 @@ from app.models.job_assignment import JobAssignment
 from app.models.job import Job
 from app.models.user import User
 from datetime import datetime
+from app.models.payment import Payment
 
 from app.services.worker_service import (
     create_worker_profile,
@@ -141,6 +142,15 @@ def get_worker_accepted_jobs(db: Session = Depends(get_db)):
             [part for part in location_parts if part]
         )
 
+        payment = (
+          db.query(Payment)
+         .filter(Payment.job_id == job.id)
+         .first()
+    )
+
+        job_price = payment.amount if payment else 0
+        worker_amount = payment.worker_amount if payment else 0
+
         accepted_jobs.append({
             "id": str(assignment.id),
             "assignment_id": str(assignment.id),
@@ -155,7 +165,8 @@ def get_worker_accepted_jobs(db: Session = Depends(get_db)):
             "area": job.area,
             "city": job.city,
             "state": job.state,
-            "price": 0,
+            "price": job_price,
+            "worker_amount": worker_amount,
             "urgency": job.urgency,
             "priority": job.urgency,
             "status": job.status,
