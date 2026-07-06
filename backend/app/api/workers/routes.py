@@ -1,17 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.worker import WorkerCreate, WorkerResponse
-from app.services.worker_service import create_worker_profile
-
-from fastapi import HTTPException
 from app.schemas.worker_update import WorkerAvailabilityUpdate
-from app.services.worker_service import update_worker_availability
-from app.models.worker import Worker
 
+from app.models.worker import Worker
 from app.models.worker_review import WorkerReview
 from app.models.job_assignment import JobAssignment
+from app.models.job import Job
+from app.models.user import User
+from datetime import datetime
 
 from app.services.worker_service import (
     create_worker_profile,
@@ -35,9 +34,136 @@ def register_worker(
 ):
     return create_worker_profile(db, worker)
 
+
 @router.get("/")
 def list_workers(db: Session = Depends(get_db)):
     return get_workers_with_user_details(db)
+
+
+@router.get("/jobs")
+def get_worker_job_requests(db: Session = Depends(get_db)):
+    assignments = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.completed_at == None)
+        .filter(JobAssignment.status == "pending")
+        .all()
+    )
+
+    job_requests = []
+
+    for assignment in assignments:
+        job = (
+            db.query(Job)
+            .filter(Job.id == assignment.job_id)
+            .first()
+        )
+
+        if not job:
+            continue
+
+        customer = (
+            db.query(User)
+            .filter(User.id == job.customer_id)
+            .first()
+        )
+
+        location_parts = [
+            job.area,
+            job.city,
+            job.state,
+        ]
+
+        location = ", ".join(
+            [part for part in location_parts if part]
+        )
+
+        job_requests.append({
+            "id": str(assignment.id),
+            "assignment_id": str(assignment.id),
+            "job_id": str(job.id),
+            "worker_id": str(assignment.worker_id) if assignment.worker_id else None,
+            "title": job.title,
+            "description": job.description,
+            "customer_name": customer.full_name if customer else "Customer",
+            "customer_phone": customer.phone if customer else None,
+            "category_id": job.category_id,
+            "location": location,
+            "area": job.area,
+            "city": job.city,
+            "state": job.state,
+            "price": 0,
+            "urgency": job.urgency,
+            "priority": job.urgency,
+            "status": assignment.status,
+            "job_status": job.status,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+        })
+
+    return {
+        "jobs": job_requests
+    }
+
+
+@router.post("/jobs/{assignment_id}/accept")
+def accept_worker_job(
+    assignment_id: str,
+    db: Session = Depends(get_db)
+):
+    assignment = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.id == assignment_id)
+        .first()
+    )
+
+    if not assignment:
+        raise HTTPException(
+            status_code=404,
+            detail="Job assignment not found"
+        )
+
+    if hasattr(assignment, "status"):
+        assignment.status = "accepted"
+
+    db.commit()
+    db.refresh(assignment)
+
+    return {
+        "message": "Job accepted successfully",
+        "assignment_id": str(assignment.id),
+        "status": getattr(assignment, "status", "accepted"),
+    }
+
+
+@router.post("/jobs/{assignment_id}/reject")
+def reject_worker_job(
+    assignment_id: str,
+    db: Session = Depends(get_db)
+):
+    assignment = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.id == assignment_id)
+        .first()
+    )
+
+    if not assignment:
+        raise HTTPException(
+            status_code=404,
+            detail="Job assignment not found"
+        )
+
+    if hasattr(assignment, "status"):
+        assignment.status = "rejected"
+
+    db.commit()
+    db.refresh(assignment)
+
+    return {
+        "message": "Job rejected successfully",
+        "assignment_id": str(assignment.id),
+        "status": getattr(assignment, "status", "rejected"),
+    }
+
 
 @router.patch(
     "/{worker_id}/availability",
@@ -62,21 +188,6 @@ def update_availability(
 
     return worker
 
-@router.get("/{worker_id}")
-def get_worker(worker_id: str, db: Session = Depends(get_db)):
-    worker = (
-        db.query(Worker)
-        .filter(Worker.id == worker_id)
-        .first()
-    )
-
-    if not worker:
-        raise HTTPException(
-            status_code=404,
-            detail="Worker not found"
-        )
-
-    return worker
 
 @router.get("/user/{user_id}")
 def get_worker_by_user_id(
@@ -88,6 +199,7 @@ def get_worker_by_user_id(
         .filter(Worker.user_id == user_id)
         .first()
     )
+
 
 @router.get("/{worker_id}/reputation")
 def get_worker_reputation(
@@ -127,3 +239,20 @@ def get_worker_reputation(
         "total_reviews": total_reviews,
         "completed_jobs": completed_jobs
     }
+
+
+@router.get("/{worker_id}")
+def get_worker(worker_id: str, db: Session = Depends(get_db)):
+    worker = (
+        db.query(Worker)
+        .filter(Worker.id == worker_id)
+        .first()
+    )
+
+    if not worker:
+        raise HTTPException(
+            status_code=404,
+            detail="Worker not found"
+        )
+
+    return worker

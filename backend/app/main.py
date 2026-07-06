@@ -1,8 +1,9 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import Base
 from app.core.database import engine
-
+ 
 from app.models import User
 
 from app.api.auth.routes import router as auth_router
@@ -125,6 +126,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from app.api.ai_pricing.routes import router as ai_pricing_router
 
 from app.api.ai_fraud.routes import (
@@ -136,6 +150,8 @@ from app.api.ai_customer_trust.routes import router as ai_customer_trust_router
 from app.api.ai_worker_reliability.routes import router as ai_worker_reliability_router
 
 from app.api.ai_predictive_analytics.routes import router as ai_predictive_analytics_router
+
+from fastapi.middleware.cors import CORSMiddleware
 
 Base.metadata.create_all(bind=engine)
 
