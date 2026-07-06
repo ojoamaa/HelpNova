@@ -27,6 +27,11 @@ export async function getWorkerJobRequests() {
     return data;
 }
 
+export async function getAcceptedJobs() {
+    const response = await api.get("/workers/accepted-jobs");
+    return response.data.jobs;
+}
+
 export async function acceptWorkerJob(jobId) {
     const { data } = await api.post(`/workers/jobs/${jobId}/accept`);
     return data;
@@ -56,17 +61,58 @@ export async function getWorkerProfile() {
     return data;
 }
 
+export async function markWorkerOnMyWay(jobId, workerId) {
+    const { data } = await api.post("/job-lifecycle/on-my-way", {
+        job_id: jobId,
+        worker_id: workerId,
+    });
+
+    return data;
+}
+
+export async function markWorkerArrived(jobId, workerId) {
+    const { data } = await api.post("/job-lifecycle/arrived", {
+        job_id: jobId,
+        worker_id: workerId,
+    });
+
+    return data;
+}
+
+export async function startWorkerJob(jobId, workerId) {
+    const { data } = await api.post("/job-lifecycle/start", {
+        job_id: jobId,
+        worker_id: workerId,
+    });
+
+    return data;
+}
+
+export async function completeWorkerJob(jobId, workerId) {
+    const { data } = await api.post("/job-lifecycle/complete", {
+        job_id: jobId,
+        worker_id: workerId,
+    });
+
+    return data;
+}
+
 const workerApi = {
     getWorkerPerformance,
     getWorkerJobs,
     getWorkerWallet,
     getWorkerDashboard,
     getWorkerJobRequests,
+    getAcceptedJobs,
     acceptWorkerJob,
     rejectWorkerJob,
     updateWorkerAvailability,
     requestWorkerWithdrawal,
     getWorkerProfile,
+    markWorkerOnMyWay,
+    markWorkerArrived,
+    startWorkerJob,
+    completeWorkerJob,
 };
 
 export default workerApi;

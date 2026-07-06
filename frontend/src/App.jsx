@@ -4,6 +4,7 @@ import WorkerDashboard from "./pages/worker/WorkerDashboard";
 import WorkerJobs from "./pages/worker/WorkerJobs";
 import WorkerWallet from "./pages/worker/WorkerWallet";
 import WorkerProfile from "./pages/worker/WorkerProfile";
+import WorkerCurrentJob from "./pages/worker/WorkerCurrentJob";
 
 function Home() {
     return (
@@ -80,6 +81,10 @@ export default function App() {
                     <Route path="jobs" element={<WorkerJobs />} />
                     <Route path="wallet" element={<WorkerWallet />} />
                     <Route path="profile" element={<WorkerProfile />} />
+                    <Route
+                        path="/worker/current-job"
+                        element={<WorkerCurrentJob />}
+                    />
                 </Route>
 
                 <Route path="/customer" element={<CustomerApp />} />
