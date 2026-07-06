@@ -104,6 +104,70 @@ def get_worker_job_requests(db: Session = Depends(get_db)):
         "jobs": job_requests
     }
 
+@router.get("/accepted-jobs")
+def get_worker_accepted_jobs(db: Session = Depends(get_db)):
+    assignments = (
+        db.query(JobAssignment)
+        .filter(JobAssignment.completed_at == None)
+        .filter(JobAssignment.status == "accepted")
+        .all()
+    )
+
+    accepted_jobs = []
+
+    for assignment in assignments:
+        job = (
+            db.query(Job)
+            .filter(Job.id == assignment.job_id)
+            .first()
+        )
+
+        if not job:
+            continue
+
+        customer = (
+            db.query(User)
+            .filter(User.id == job.customer_id)
+            .first()
+        )
+
+        location_parts = [
+            job.area,
+            job.city,
+            job.state,
+        ]
+
+        location = ", ".join(
+            [part for part in location_parts if part]
+        )
+
+        accepted_jobs.append({
+            "id": str(assignment.id),
+            "assignment_id": str(assignment.id),
+            "job_id": str(job.id),
+            "worker_id": str(assignment.worker_id) if assignment.worker_id else None,
+            "title": job.title,
+            "description": job.description,
+            "customer_name": customer.full_name if customer else "Customer",
+            "customer_phone": customer.phone if customer else None,
+            "category_id": job.category_id,
+            "location": location,
+            "area": job.area,
+            "city": job.city,
+            "state": job.state,
+            "price": 0,
+            "urgency": job.urgency,
+            "priority": job.urgency,
+            "status": job.status,
+            "assignment_status": assignment.status,
+            "created_at": job.created_at.isoformat() if job.created_at else None,
+            "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+            "accepted_at": assignment.accepted_at.isoformat() if assignment.accepted_at else None,
+        })
+
+    return {
+        "jobs": accepted_jobs
+    }
 
 @router.post("/jobs/{assignment_id}/accept")
 def accept_worker_job(
