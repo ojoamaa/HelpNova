@@ -97,6 +97,11 @@ export async function completeWorkerJob(jobId, workerId) {
     return data;
 }
 
+export async function getWorkerWalletTransactions() {
+    const { data } = await api.get(`/wallet/${WORKER_ID}/transactions`);
+    return data;
+}
+
 const workerApi = {
     getWorkerPerformance,
     getWorkerJobs,
@@ -113,6 +118,7 @@ const workerApi = {
     markWorkerArrived,
     startWorkerJob,
     completeWorkerJob,
+    getWorkerWalletTransactions,
 };
 
 export default workerApi;
