@@ -6,6 +6,7 @@ from app.models.payment import Payment
 from app.models.job_assignment import JobAssignment
 from app.models.receipt import Receipt
 from app.services.wallet_service import release_pending_balance
+from app.services.wallet_service import add_pending_balance, release_pending_balance
 from app.services.pdf_receipt_service import generate_receipt_pdf
 
 PLATFORM_FEE_PERCENT = 10
@@ -59,6 +60,14 @@ def mark_payment_paid(db: Session, payment_reference: str):
 
     payment.status = "paid"
     payment.paid_at = datetime.utcnow()
+
+    if payment.worker_id:
+       add_pending_balance(
+        db=db,
+        worker_id=payment.worker_id,
+        payment_id=payment.id,
+        amount=payment.worker_amount
+    )
 
     receipt = (
         db.query(Receipt)

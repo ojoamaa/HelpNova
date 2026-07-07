@@ -29,9 +29,14 @@ class Withdrawal(Base):
     admin_note = Column(String, nullable=True)
 
     requested_at = Column(DateTime, default=datetime.utcnow)
+
+    approved_by = Column(String, nullable=True)
     approved_at = Column(DateTime, nullable=True)
 
-    # NEW
-    paid_at = Column(DateTime, nullable=True)
-
+    rejected_by = Column(String, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
+
+    paid_by = Column(String, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    
+    

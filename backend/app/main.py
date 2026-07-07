@@ -121,6 +121,8 @@ from app.api.ai_operations_assistant.routes import (
     router as ai_operations_assistant_router,
 )
 
+from app.api.finance.routes import router as finance_router
+
 app = FastAPI(
     title="HelpNova API",
     version="1.0.0"
@@ -205,6 +207,11 @@ app.include_router(ai_customer_trust_router)
 app.include_router(ai_worker_reliability_router)
 app.include_router(ai_predictive_analytics_router)
 app.include_router(ai_operations_assistant_router)
+app.include_router(
+    finance_router,
+    prefix="/finance",
+    tags=["Finance"]
+)
 
 @app.get("/")
 def root():
