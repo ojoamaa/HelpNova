@@ -21,23 +21,66 @@ export default function LiveOperationsCenter() {
     const [summary, setSummary] = useState(null);
     const [liveJobs, setLiveJobs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState(null);
 
     useEffect(() => {
-        loadOperationsSummary();
+        loadOperationsData();
+
+        const interval = setInterval(() => {
+            loadOperationsData(false);
+        }, 15000);
+
+        return () => clearInterval(interval);
     }, []);
 
-    async function loadOperationsSummary() {
+    async function loadOperationsData(showLoading = true) {
         try {
-            const data = await getLiveOperationsSummary();
-            const jobs = await getLiveJobQueue();
+            if (showLoading) setLoading(true);
 
-            setSummary(data);
-            setLiveJobs(jobs || []);
+            const summaryData = await getLiveOperationsSummary();
+            const jobsData = await getLiveJobQueue();
+
+            setSummary(summaryData);
+            setLiveJobs(jobsData || []);
+            setLastUpdated(new Date());
         } catch (err) {
-            console.error("Failed to load operations summary:", err);
+            console.error("Failed to load live operations:", err);
         } finally {
             setLoading(false);
         }
+    }
+
+    function statusBadge(status) {
+        const value = (status || "unknown").toLowerCase();
+
+        if (value === "pending") return "bg-yellow-100 text-yellow-700";
+        if (value === "accepted") return "bg-green-100 text-green-700";
+        if (value === "on_my_way") return "bg-blue-100 text-blue-700";
+        if (value === "arrived") return "bg-indigo-100 text-indigo-700";
+        if (value === "started" || value === "in_progress")
+            return "bg-blue-100 text-blue-700";
+        if (value === "completed") return "bg-green-100 text-green-700";
+        if (value === "cancelled" || value === "rejected")
+            return "bg-red-100 text-red-700";
+
+        return "bg-slate-100 text-slate-700";
+    }
+
+    function priorityBadge(priority) {
+        const value = (priority || "normal").toLowerCase();
+
+        if (value === "normal") return "bg-green-100 text-green-700";
+        if (value === "medium") return "bg-yellow-100 text-yellow-700";
+        if (value === "high" || value === "urgent")
+            return "bg-orange-100 text-orange-700";
+        if (value === "emergency") return "bg-red-100 text-red-700";
+
+        return "bg-slate-100 text-slate-700";
+    }
+
+    function formatText(value) {
+        if (!value) return "Unknown";
+        return value.replaceAll("_", " ");
     }
 
     const operationCards = [
@@ -91,6 +134,20 @@ export default function LiveOperationsCenter() {
         },
     ];
 
+    const health =
+        (summary?.emergency_requests || 0) > 0
+            ? "Critical"
+            : (summary?.delayed_jobs || 0) > 5
+                ? "Heavy Traffic"
+                : "System Healthy";
+
+    const healthClass =
+        health === "Critical"
+            ? "bg-red-100 text-red-700"
+            : health === "Heavy Traffic"
+                ? "bg-yellow-100 text-yellow-700"
+                : "bg-green-100 text-green-700";
+
     if (loading) {
         return (
             <div className="min-h-screen bg-slate-100 p-6 flex items-center justify-center">
@@ -111,13 +168,31 @@ export default function LiveOperationsCenter() {
                 </Link>
 
                 <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl">
-                    <p className="text-blue-200 font-semibold">HelpNova Live Operations</p>
-                    <h1 className="text-3xl font-bold mt-2">
-                        Dispatch & Field Monitoring Center
-                    </h1>
-                    <p className="text-slate-300 mt-2">
-                        Monitor live jobs, worker movement, emergency requests and operational performance.
-                    </p>
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                        <div>
+                            <p className="text-blue-200 font-semibold">
+                                HelpNova Live Operations
+                            </p>
+                            <h1 className="text-3xl font-bold mt-2">
+                                Dispatch & Field Monitoring Center
+                            </h1>
+                            <p className="text-slate-300 mt-2">
+                                Monitor live jobs, worker movement, emergency requests and
+                                operational performance.
+                            </p>
+
+                            <p className="text-xs text-slate-400 mt-3">
+                                Last Updated:{" "}
+                                {lastUpdated ? lastUpdated.toLocaleString() : "Not updated yet"}
+                            </p>
+                        </div>
+
+                        <span
+                            className={`px-4 py-2 rounded-full text-sm font-bold self-start ${healthClass}`}
+                        >
+                            {health}
+                        </span>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -132,7 +207,9 @@ export default function LiveOperationsCenter() {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="text-slate-500 text-sm">{card.title}</p>
-                                        <h2 className="text-3xl font-bold mt-2">{card.value}</h2>
+                                        <h2 className="text-3xl font-bold mt-2 transition-all">
+                                            {card.value}
+                                        </h2>
                                         <p className="text-xs text-slate-500 mt-1">{card.note}</p>
                                     </div>
                                     <Icon className="text-blue-600" size={34} />
@@ -144,7 +221,16 @@ export default function LiveOperationsCenter() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     <div className="bg-white rounded-2xl shadow p-5 lg:col-span-2">
-                        <h2 className="text-xl font-bold mb-4">Live Job Queue</h2>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold">Live Job Queue</h2>
+
+                            <button
+                                onClick={() => loadOperationsData(false)}
+                                className="text-sm bg-slate-900 text-white px-4 py-2 rounded-xl font-semibold"
+                            >
+                                Refresh
+                            </button>
+                        </div>
 
                         <div className="border border-slate-200 rounded-xl overflow-hidden">
                             <div className="grid grid-cols-5 bg-slate-50 text-slate-500 text-sm font-semibold p-3">
@@ -163,13 +249,37 @@ export default function LiveOperationsCenter() {
                                 liveJobs.map((job) => (
                                     <div
                                         key={job.id}
-                                        className="grid grid-cols-5 p-3 border-t text-sm items-center"
+                                        className="grid grid-cols-5 p-3 border-t text-sm items-center hover:bg-slate-50"
                                     >
-                                        <span className="font-semibold">{job.title || "Untitled Job"}</span>
+                                        <span className="font-semibold">
+                                            {job.title || "Untitled Job"}
+                                        </span>
+
                                         <span>{job.worker_name || "Unassigned"}</span>
-                                        <span className="capitalize">{job.status || "unknown"}</span>
-                                        <span>{job.city || "-"} {job.area ? `- ${job.area}` : ""}</span>
-                                        <span className="capitalize">{job.urgency || "normal"}</span>
+
+                                        <span>
+                                            <span
+                                                className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${statusBadge(
+                                                    job.status
+                                                )}`}
+                                            >
+                                                {formatText(job.status)}
+                                            </span>
+                                        </span>
+
+                                        <span>
+                                            {job.city || "-"} {job.area ? `- ${job.area}` : ""}
+                                        </span>
+
+                                        <span>
+                                            <span
+                                                className={`px-3 py-1 rounded-full text-xs font-semibold capitalize ${priorityBadge(
+                                                    job.urgency
+                                                )}`}
+                                            >
+                                                {formatText(job.urgency || "normal")}
+                                            </span>
+                                        </span>
                                     </div>
                                 ))
                             )}
