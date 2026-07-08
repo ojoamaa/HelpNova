@@ -8,6 +8,7 @@ import WorkerCurrentJob from "./pages/worker/WorkerCurrentJob";
 import AdminFinanceDashboard from "./pages/admin/AdminFinanceDashboard";
 import ExecutiveCommandCenter from "./pages/admin/ExecutiveCommandCenter";
 import LiveOperationsCenter from "./pages/admin/LiveOperationsCenter";
+import AdminLayout from "./layouts/AdminLayout";
 
 function Home() {
     return (
@@ -162,22 +163,61 @@ export default function App() {
 
                 <Route path="/customer" element={<CustomerApp />} />
 
-                <Route path="/admin" element={<AdminDashboard />} />
+                <Route path="/admin" element={<AdminLayout />}>
 
-                <Route
-                    path="/admin/finance"
-                    element={<AdminFinanceDashboard />}
-                />
+                    <Route index element={<AdminDashboard />} />
 
-                <Route
-                    path="/admin/command-center"
-                    element={<ExecutiveCommandCenter />}
-                />
+                    <Route
+                        path="command-center"
+                        element={<ExecutiveCommandCenter />}
+                    />
 
-                <Route
-                    path="/admin/live-operations"
-                    element={<LiveOperationsCenter />}
-                />
+                    <Route
+                        path="finance"
+                        element={<AdminFinanceDashboard />}
+                    />
+
+                    <Route
+                        path="live-operations"
+                        element={<LiveOperationsCenter />}
+                    />
+
+                    <Route
+                        path="workers"
+                        element={
+                            <div className="p-6 bg-white rounded-2xl shadow">
+                                <h1 className="text-2xl font-bold">Worker Management</h1>
+                                <p className="text-slate-600 mt-2">
+                                    Worker approval, verification, status, ratings and performance will be managed here.
+                                </p>
+                            </div>
+                        }
+                    />
+
+                    <Route
+                        path="customers"
+                        element={
+                            <div className="p-6 bg-white rounded-2xl shadow">
+                                <h1 className="text-2xl font-bold">Customer Management</h1>
+                                <p className="text-slate-600 mt-2">
+                                    Customer records, requests, spending history and support flags will appear here.
+                                </p>
+                            </div>
+                        }
+                    />
+
+                    <Route
+                        path="fraud-watch"
+                        element={
+                            <div className="p-6 bg-white rounded-2xl shadow">
+                                <h1 className="text-2xl font-bold">Fraud Watch</h1>
+                                <p className="text-slate-600 mt-2">
+                                    Suspicious accounts, fake jobs, payment risk and abnormal behavior will be monitored here.
+                                </p>
+                            </div>
+                        }
+                    />
+                </Route>
             </Routes>
         </BrowserRouter>
     );
