@@ -9,6 +9,7 @@ import AdminFinanceDashboard from "./pages/admin/AdminFinanceDashboard";
 import ExecutiveCommandCenter from "./pages/admin/ExecutiveCommandCenter";
 import LiveOperationsCenter from "./pages/admin/LiveOperationsCenter";
 import AdminLayout from "./layouts/AdminLayout";
+import WorkerManagement from "./pages/admin/WorkerManagement";
 
 function Home() {
     return (
@@ -182,17 +183,7 @@ export default function App() {
                         element={<LiveOperationsCenter />}
                     />
 
-                    <Route
-                        path="workers"
-                        element={
-                            <div className="p-6 bg-white rounded-2xl shadow">
-                                <h1 className="text-2xl font-bold">Worker Management</h1>
-                                <p className="text-slate-600 mt-2">
-                                    Worker approval, verification, status, ratings and performance will be managed here.
-                                </p>
-                            </div>
-                        }
-                    />
+                    <Route path="workers" element={<WorkerManagement />} />
 
                     <Route
                         path="customers"
