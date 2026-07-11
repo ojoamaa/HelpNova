@@ -10,6 +10,7 @@ import ExecutiveCommandCenter from "./pages/admin/ExecutiveCommandCenter";
 import LiveOperationsCenter from "./pages/admin/LiveOperationsCenter";
 import AdminLayout from "./layouts/AdminLayout";
 import WorkerManagement from "./pages/admin/WorkerManagement";
+import CustomerManagement from "./pages/admin/CustomerManagement";
 
 function Home() {
     return (
@@ -185,16 +186,10 @@ export default function App() {
 
                     <Route path="workers" element={<WorkerManagement />} />
 
+                   
                     <Route
-                        path="customers"
-                        element={
-                            <div className="p-6 bg-white rounded-2xl shadow">
-                                <h1 className="text-2xl font-bold">Customer Management</h1>
-                                <p className="text-slate-600 mt-2">
-                                    Customer records, requests, spending history and support flags will appear here.
-                                </p>
-                            </div>
-                        }
+                        path="/admin/customers"
+                        element={<CustomerManagement />}
                     />
 
                     <Route
