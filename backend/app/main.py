@@ -155,6 +155,8 @@ from app.api.ai_predictive_analytics.routes import router as ai_predictive_analy
 
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.operations.routes import router as operations_router
+
 Base.metadata.create_all(bind=engine)
 
 app.include_router(auth_router)
@@ -212,6 +214,8 @@ app.include_router(
     prefix="/finance",
     tags=["Finance"]
 )
+app.include_router(operations_router)
+
 
 @app.get("/")
 def root():
