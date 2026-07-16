@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Boolean
+from sqlalchemy import Boolean, Column, String
 
 from app.core.database import Base
 
@@ -15,26 +15,32 @@ class User(Base):
     phone = Column(
         String,
         unique=True,
-        nullable=False
+        nullable=False,
     )
 
     email = Column(
         String,
         unique=True,
-        nullable=True
+        nullable=True,
     )
 
     password_hash = Column(
         String,
-        nullable=False
+        nullable=False,
     )
 
     role = Column(
         String,
-        default="customer"
+        default="customer",
+    )
+
+    verification_status = Column(
+        String,
+        default="pending",
+        nullable=False,
     )
 
     is_active = Column(
         Boolean,
-        default=True
+        default=True,
     )

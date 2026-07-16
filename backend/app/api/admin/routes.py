@@ -461,7 +461,7 @@ def admin_list_customers(
             "last_activity": last_activity,
 
             # These fields do not yet exist in the database.
-            "verification_status": "pending",
+            "verification_status": customer.verification_status or "pending",
             "customer_type": "regular",
             "fraud_flag": False,
             "average_rating": None,
@@ -850,5 +850,132 @@ def admin_get_customer_details(
             "escrow_balance": escrow_balance,
             "completed_payments": completed_payments,
             "pending_refunds": pending_refunds,
+        },
+    }
+
+@router.patch("/customers/{customer_id}/verify")
+def admin_verify_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+):
+    customer = (
+        db.query(User)
+        .filter(
+            User.id == customer_id,
+            User.role == "customer",
+        )
+        .first()
+    )
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
+
+    customer.verification_status = "verified"
+
+    db.commit()
+    db.refresh(customer)
+
+    return {
+    "message": "Customer verified successfully",
+    "customer": {
+        "customer_id": customer.id,
+        "full_name": customer.full_name,
+        "verification_status": customer.verification_status,
+        "is_active": customer.is_active,
+    },
+}
+
+@router.patch("/customers/{customer_id}/suspend")
+def admin_suspend_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+):
+    customer = (
+        db.query(User)
+        .filter(
+            User.id == customer_id,
+            User.role == "customer",
+        )
+        .first()
+    )
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
+
+    if customer.is_active is False:
+        return {
+            "message": "Customer is already suspended",
+            "customer": {
+                "customer_id": customer.id,
+                "full_name": customer.full_name,
+                "verification_status": customer.verification_status,
+                "is_active": customer.is_active,
+            },
+        }
+
+    customer.is_active = False
+
+    db.commit()
+    db.refresh(customer)
+
+    return {
+        "message": "Customer suspended successfully",
+        "customer": {
+            "customer_id": customer.id,
+            "full_name": customer.full_name,
+            "verification_status": customer.verification_status,
+            "is_active": customer.is_active,
+        },
+    }
+
+@router.patch("/customers/{customer_id}/reactivate")
+def admin_reactivate_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+):
+    customer = (
+        db.query(User)
+        .filter(
+            User.id == customer_id,
+            User.role == "customer",
+        )
+        .first()
+    )
+
+    if not customer:
+        raise HTTPException(
+            status_code=404,
+            detail="Customer not found",
+        )
+
+    if customer.is_active is True:
+        return {
+            "message": "Customer is already active",
+            "customer": {
+                "customer_id": customer.id,
+                "full_name": customer.full_name,
+                "verification_status": customer.verification_status,
+                "is_active": customer.is_active,
+            },
+        }
+
+    customer.is_active = True
+
+    db.commit()
+    db.refresh(customer)
+
+    return {
+        "message": "Customer reactivated successfully",
+        "customer": {
+            "customer_id": customer.id,
+            "full_name": customer.full_name,
+            "verification_status": customer.verification_status,
+            "is_active": customer.is_active,
         },
     }

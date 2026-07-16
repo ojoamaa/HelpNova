@@ -1,4 +1,11 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
+import {
+    getAdminCustomers,
+    getAdminCustomerDetails,
+    verifyCustomer,
+    suspendAdminCustomer,
+    reactivateAdminCustomer,
+} from "../../api/customerAdminApi";
 import {
     Search,
     Eye,
@@ -7,7 +14,7 @@ import {
     Star,
     Camera,
     MapPin,
-    Phone,
+    Phone,  
     Mail,
     CalendarDays,
     Crown,
@@ -225,13 +232,570 @@ const filters = [
     "Fraud Watch",
 ];
 
+function formatCustomerLabel(value) {
+    if (!value) return "Not available";
+
+    return String(value)
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export default function CustomerManagement() {
     const [activeFilter, setActiveFilter] = useState("All");
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [customerAction, setCustomerAction] = useState(null);
     const [actionMessage, setActionMessage] = useState("");
-    const [customerRecords, setCustomerRecords] = useState(initialCustomers);
+    const [customerRecords, setCustomerRecords] = useState([]);
+
+    const [customersLoading, setCustomersLoading] = useState(true);
+    const [customersError, setCustomersError] = useState("");
+
+    const [customerDetailsLoading, setCustomerDetailsLoading] = useState(false);
+    const [customerDetailsError, setCustomerDetailsError] = useState("");
+    
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadCustomers = async () => {
+            try {
+                setCustomersLoading(true);
+                setCustomersError("");
+
+                const data = await getAdminCustomers();
+
+                console.log("Raw backend customers:", data);
+
+                if (!Array.isArray(data)) {
+                    throw new Error(
+                        "The customer endpoint did not return an array."
+                    );
+                }
+
+                const normalizedCustomers = data.map((customer) => ({
+                    id: customer.customer_id,
+                    name: customer.full_name || "Unnamed Customer",
+                    photoUrl: customer.profile_photo_url || "",
+                    phone: customer.phone || "",
+                    email: customer.email || "",
+                    verification:
+                        customer.verification_status === "verified"
+                            ? "Verified"
+                            : "Pending",
+                    status: customer.is_active ? "Active" : "Suspended",
+                    customerType:
+                        customer.customer_type === "vip"
+                            ? "VIP"
+                            : "Regular",
+                    role: customer.role || "customer",
+
+                    location: customer.location || "Not provided",
+                    rating: 0,
+                    totalJobs: customer.total_jobs || 0,
+                    totalSpent: customer.total_spent || 0,
+                    joined: customer.created_at
+                        ? new Date(customer.created_at).toLocaleDateString()
+                        : "Not available",
+                    lastActivity: customer.last_activity
+                        ? new Date(customer.last_activity).toLocaleString()
+                        : "Not available",
+                    fraudFlag: customer.fraud_flag || false,
+                    trustScore: 0,
+                    riskLevel: "Not assessed",
+                    walletBalance: 0,
+                    escrowPayments: 0,
+                    completedPayments: 0,
+                    pendingRefunds: 0,
+                    cancelledJobs: 0,
+                    favouriteCategory: "Not available",
+                    repeatWorkers: 0,
+                    averageCompletionTime: "Not available",
+
+                    emergencyContact: {
+                        name: "Not provided",
+                        relationship: "Not provided",
+                        phone: "Not provided",
+                    },
+
+                    deviceHistory: {
+                        lastLogin: "Not available",
+                        device: "Not available",
+                        browser: "Not available",
+                        location: "Not available",
+                    },
+
+                    notes: [],
+                    complaints: {
+                        open: 0,
+                        resolved: 0,
+                        escalated: 0,
+                    },
+                }));
+
+                console.log("Normalized customers:", normalizedCustomers);
+
+                if (isMounted) {
+                    setCustomerRecords(normalizedCustomers);
+                }
+            } catch (error) {
+                console.error("Unable to load customers:", error);
+
+                if (isMounted) {
+                    setCustomersError(
+                        error.message ||
+                        "Unable to load customer records from the backend."
+                    );
+                }
+            } finally {
+                if (isMounted) {
+                    setCustomersLoading(false);
+                }
+            }
+        };
+
+        loadCustomers();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    
+    const updateCustomerRecord = (customerId, updates) => {
+        setCustomerRecords((previousRecords) =>
+            previousRecords.map((customer) =>
+                customer.id === customerId
+                    ? { ...customer, ...updates }
+                    : customer
+            )
+        );
+
+        setSelectedCustomer((previousCustomer) => {
+            if (!previousCustomer || previousCustomer.id !== customerId) {
+                return previousCustomer;
+            }
+
+            return {
+                ...previousCustomer,
+                ...updates,
+            };
+        });
+    };
+
+    const handleVerifyCustomer = async (customerId) => {
+        try {
+            setCustomersError("");
+
+            const response = await verifyCustomer(customerId);
+            const updatedCustomer = response?.customer || {};
+
+            updateCustomerRecord(customerId, {
+                verification: "Verified",
+                verification_status: "verified",
+                is_active: updatedCustomer.is_active ?? true,
+            });
+
+            setActionMessage("Customer verified successfully.");
+
+            setTimeout(() => {
+                setActionMessage("");
+            }, 4000);
+        } catch (error) {
+            console.error("Unable to verify customer:", error);
+
+            setCustomersError(
+                error.message || "Unable to verify customer."
+            );
+        }
+    };
+
+    const handleSuspendCustomer = async (customerId) => {
+        try {
+            setCustomersError("");
+
+            const response = await suspendAdminCustomer(customerId);
+            const updatedCustomer = response?.customer || {};
+
+            updateCustomerRecord(customerId, {
+                status: "Suspended",
+                is_active: updatedCustomer.is_active ?? false,
+            });
+
+            setActionMessage("Customer suspended successfully.");
+
+            setTimeout(() => {
+                setActionMessage("");
+            }, 4000);
+        } catch (error) {
+            console.error("Unable to suspend customer:", error);
+
+            setCustomersError(
+                error.message || "Unable to suspend customer."
+            );
+        }
+    };
+
+    const handleReactivateCustomer = async (customerId) => {
+        try {
+            setCustomersError("");
+
+            const response = await reactivateAdminCustomer(customerId);
+            const updatedCustomer = response?.customer || {};
+
+            updateCustomerRecord(customerId, {
+                status: "Active",
+                is_active: updatedCustomer.is_active ?? true,
+            });
+
+            setActionMessage("Customer reactivated successfully.");
+
+            setTimeout(() => {
+                setActionMessage("");
+            }, 4000);
+        } catch (error) {
+            console.error("Unable to reactivate customer:", error);
+
+            setCustomersError(
+                error.message || "Unable to reactivate customer."
+            );
+        }
+    };
+
+      
+    const applyCustomerAdministrativeAction = (actionName) => {
+        if (!selectedCustomer) return;
+
+        switch (actionName) {
+            case "verify":
+                updateCustomerRecord(selectedCustomer.id, {
+                    verification: "Verified",
+                    trustScore: Math.max(selectedCustomer.trustScore, 85),
+                    riskLevel: selectedCustomer.fraudFlag
+                        ? selectedCustomer.riskLevel
+                        : "Low Risk",
+                });
+                break;
+
+            case "flag-fraud":
+                updateCustomerRecord(selectedCustomer.id, {
+                    fraudFlag: true,
+                    customerType: "Fraud Watch",
+                    riskLevel: "High Risk",
+                    trustScore: Math.min(selectedCustomer.trustScore, 45),
+                });
+                break;
+
+            case "remove-fraud":
+                updateCustomerRecord(selectedCustomer.id, {
+                    fraudFlag: false,
+                    customerType: "Regular",
+                    riskLevel: "Moderate Risk",
+                    trustScore: Math.max(selectedCustomer.trustScore, 65),
+                });
+                break;
+
+            case "suspend":
+                updateCustomerRecord(selectedCustomer.id, {
+                    status: "Suspended",
+                });
+                break;
+
+            case "reactivate":
+                updateCustomerRecord(selectedCustomer.id, {
+                    status: "Active",
+                });
+                break;
+
+            case "blacklist":
+                updateCustomerRecord(selectedCustomer.id, {
+                    status: "Blacklisted",
+                    fraudFlag: true,
+                    customerType: "Fraud Watch",
+                    riskLevel: "Critical Risk",
+                    trustScore: Math.min(selectedCustomer.trustScore, 15),
+                });
+                break;
+
+            default:
+                break;
+        }
+    };
+
+    const openCustomerRecord = async (customer) => {
+        try {
+            setCustomerDetailsLoading(true);
+            setCustomerDetailsError("");
+
+            // Open immediately using the information already loaded in the table.
+            setSelectedCustomer(customer);
+
+            const data = await getAdminCustomerDetails(customer.id);
+            console.log("Customer Details Response:", data);
+            console.log("Summary:", data.summary);
+
+            const backendCustomer = data?.customer || {};
+            const summary = data?.summary || {};
+            const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
+            const payments = Array.isArray(data?.payments) ? data.payments : [];
+            const workerInteractions = Array.isArray(
+                data?.worker_interactions
+            )
+                ? data.worker_interactions
+                : [];
+
+            console.log("Worker interactions:", workerInteractions);
+
+            const completedJobs =
+                Number(summary.completed_jobs) ||
+                jobs.filter((job) => job.status === "completed").length;
+
+            const cancelledJobs =
+                Number(summary.cancelled_jobs) ||
+                jobs.filter((job) =>
+                    ["cancelled", "canceled"].includes(
+                        String(job.status || "").toLowerCase()
+                    )
+                ).length;
+
+            const totalJobs =
+                Number(summary.total_jobs) ||
+                jobs.length ||
+                Number(customer.totalJobs) ||
+                0;
+
+            const totalSpent =
+                Number(summary.total_spent) ||
+                Number(customer.totalSpent) ||
+                0;
+
+            const completedPayments =
+                Number(summary.completed_payments) ||
+                payments
+                    .filter((payment) => payment.status === "released")
+                    .reduce(
+                        (total, payment) => total + Number(payment.amount || 0),
+                        0
+                    );
+
+            const pendingRefunds =
+                Number(summary.pending_refunds) ||
+                payments
+                    .filter((payment) => payment.status === "refunded")
+                    .reduce(
+                        (total, payment) => total + Number(payment.amount || 0),
+                        0
+                    );
+
+            const firstJobDate =
+                jobs.length > 0 && jobs[jobs.length - 1]?.created_at
+                    ? new Date(jobs[jobs.length - 1].created_at).toLocaleDateString()
+                    : customer.joined || "Not available";
+
+            const latestJobDate =
+                jobs.length > 0 && jobs[0]?.created_at
+                    ? new Date(jobs[0].created_at).toLocaleString()
+                    : customer.lastActivity || "Not available";
+
+            const updatedCustomer = {
+                ...customer,
+
+                id: backendCustomer.customer_id || customer.id,
+                name:
+                    backendCustomer.full_name ||
+                    customer.name ||
+                    "Unnamed Customer",
+
+                photoUrl:
+                    backendCustomer.profile_photo_url ||
+                    customer.photoUrl ||
+                    "",
+
+                phone:
+                    backendCustomer.phone ||
+                    customer.phone ||
+                    "Not provided",
+
+                email:
+                    backendCustomer.email ||
+                    customer.email ||
+                    "Not provided",
+
+                role:
+                    backendCustomer.role ||
+                    customer.role ||
+                    "customer",
+
+                status:
+                    backendCustomer.is_active === false
+                        ? "Suspended"
+                        : customer.status || "Active",
+
+                location:
+                    summary.location ||
+                    customer.location ||
+                    "Not provided",
+
+                verification:
+                    formatCustomerLabel(
+                        summary.verification_status ||
+                        customer.verification ||
+                        "Pending"
+                    ),
+
+                customerType:
+                    formatCustomerLabel(
+                        summary.customer_type ||
+                        customer.customerType ||
+                        "Regular"
+                    ),
+
+                fraudFlag:
+                    Boolean(
+                        summary.fraud_flag ??
+                        customer.fraudFlag ??
+                        false
+                    ),
+
+                rating:
+                    Number(
+                        summary.average_rating ??
+                        customer.rating ??
+                        0
+                    ),
+
+                averageRating:
+                    Number(
+                        summary.average_rating ??
+                        customer.rating ??
+                        0
+                    ),
+
+                totalJobs,
+                completedJobs,
+
+                pendingJobs: Number(summary.pending_jobs || 0),
+                assignedJobs: Number(summary.assigned_jobs || 0),
+                inProgressJobs: Number(summary.in_progress_jobs || 0),
+
+                totalSpent,
+                completedPayments,
+                pendingRefunds,
+
+                walletBalance: Number(
+                    summary.wallet_balance ??
+                    customer.walletBalance ??
+                    0
+                ),
+
+                escrowPayments: Number(summary.escrow_balance || 0),
+
+                escrowBalance: Number(summary.escrow_balance || 0),
+
+                cancelledJobs,
+
+                repeatWorkers: Number(
+                    summary.repeat_workers ??
+                    customer.repeatWorkers ??
+                    0
+                ),
+
+                averageCompletionTime:
+                    summary.average_completion_time ||
+                    customer.averageCompletionTime ||
+                    "Not available",
+
+                favouriteCategory:
+                    summary.favourite_category ||
+                    customer.favouriteCategory ||
+                    "Not available",
+
+                trustScore: Number(
+                    summary.trust_score ??
+                    customer.trustScore ??
+                    0
+                ),
+
+                riskLevel:
+                    summary.risk_level ||
+                    customer.riskLevel ||
+                    "Not assessed",
+
+                joined:
+                    backendCustomer.created_at
+                        ? new Date(
+                            backendCustomer.created_at
+                        ).toLocaleDateString()
+                        : firstJobDate,
+
+                lastActivity:
+                    summary.last_activity
+                        ? new Date(
+                            summary.last_activity
+                        ).toLocaleString()
+                        : latestJobDate,
+
+                jobs,
+                payments,
+                workerInteractions,
+
+                emergencyContact:
+                    summary.emergency_contact ||
+                    customer.emergencyContact || {
+                        name: "Not provided",
+                        relationship: "Not provided",
+                        phone: "Not provided",
+                    },
+
+                deviceHistory:
+                    summary.device_history ||
+                    customer.deviceHistory || {
+                        lastLogin: "Not available",
+                        device: "Not available",
+                        browser: "Not available",
+                        location: "Not available",
+                    },
+
+                notes:
+                    summary.notes ||
+                    customer.notes ||
+                    [],
+
+                complaints:
+                    summary.complaints ||
+                    customer.complaints || {
+                        open: 0,
+                        resolved: 0,
+                        escalated: 0,
+                    },
+            };
+
+            setSelectedCustomer(updatedCustomer);
+
+            setCustomerRecords((previousRecords) =>
+                previousRecords.map((record) =>
+                    record.id === updatedCustomer.id
+                        ? {
+                            ...record,
+                            ...updatedCustomer,
+                        }
+                        : record
+                )
+            );
+        } catch (error) {
+            console.error(
+                "Unable to load customer details:",
+                error
+            );
+
+            setCustomerDetailsError(
+                error?.response?.data?.detail ||
+                "Unable to load the complete customer record."
+            );
+        } finally {
+            setCustomerDetailsLoading(false);
+        }
+    };
 
     const filteredCustomers = useMemo(() => {
         const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -245,100 +809,67 @@ export default function CustomerManagement() {
 
             const matchesSearch =
                 !normalizedSearch ||
-                customer.name.toLowerCase().includes(normalizedSearch) ||
-                customer.id.toLowerCase().includes(normalizedSearch) ||
-                customer.phone.toLowerCase().includes(normalizedSearch) ||
-                customer.email.toLowerCase().includes(normalizedSearch) ||
-                customer.location.toLowerCase().includes(normalizedSearch);
-
-            const updateCustomerRecord = (customerId, updates) => {
-                setCustomerRecords((previousRecords) =>
-                    previousRecords.map((customer) =>
-                        customer.id === customerId
-                            ? { ...customer, ...updates }
-                            : customer
-                    )
-                );
-
-                setSelectedCustomer((previousCustomer) => {
-                    if (!previousCustomer || previousCustomer.id !== customerId) {
-                        return previousCustomer;
-                    }
-
-                    return {
-                        ...previousCustomer,
-                        ...updates,
-                    };
-                });
-            };
-
-            const applyCustomerAdministrativeAction = (actionName) => {
-                if (!selectedCustomer) return;
-
-                switch (actionName) {
-                    case "verify":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            verification: "Verified",
-                            trustScore: Math.max(selectedCustomer.trustScore, 85),
-                            riskLevel:
-                                selectedCustomer.fraudFlag
-                                    ? selectedCustomer.riskLevel
-                                    : "Low Risk",
-                        });
-                        break;
-
-                    case "flag-fraud":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            fraudFlag: true,
-                            customerType: "Fraud Watch",
-                            riskLevel: "High Risk",
-                            trustScore: Math.min(selectedCustomer.trustScore, 45),
-                        });
-                        break;
-
-                    case "remove-fraud":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            fraudFlag: false,
-                            customerType: "Regular",
-                            riskLevel: "Moderate Risk",
-                            trustScore: Math.max(selectedCustomer.trustScore, 65),
-                        });
-                        break;
-
-                    case "suspend":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            status: "Suspended",
-                        });
-                        break;
-
-                    case "reactivate":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            status: "Active",
-                        });
-                        break;
-
-                    case "blacklist":
-                        updateCustomerRecord(selectedCustomer.id, {
-                            status: "Blacklisted",
-                            fraudFlag: true,
-                            customerType: "Fraud Watch",
-                            riskLevel: "Critical Risk",
-                            trustScore: Math.min(selectedCustomer.trustScore, 15),
-                        });
-                        break;
-
-                    default:
-                        break;
-                }
-            };
+                customer.name?.toLowerCase().includes(normalizedSearch) ||
+                customer.id?.toLowerCase().includes(normalizedSearch) ||
+                customer.phone?.toLowerCase().includes(normalizedSearch) ||
+                customer.email?.toLowerCase().includes(normalizedSearch) ||
+                customer.location?.toLowerCase().includes(normalizedSearch);
 
             return matchesFilter && matchesSearch;
         });
     }, [activeFilter, searchTerm, customerRecords]);
 
+    const customerSummary = useMemo(() => {
+        return {
+            total: customerRecords.length,
+
+            active: customerRecords.filter(
+                (customer) => customer.status === "Active"
+            ).length,
+
+            pending: customerRecords.filter(
+                (customer) => customer.verification === "Pending"
+            ).length,
+
+            suspended: customerRecords.filter(
+                (customer) => customer.status === "Suspended"
+            ).length,
+
+            vip: customerRecords.filter(
+                (customer) => customer.customerType === "VIP"
+            ).length,
+
+            fraudAlerts: customerRecords.filter(
+                (customer) => customer.fraudFlag
+            ).length,
+        };
+    }, [customerRecords]);
+
     return (
         <>
             <div className="space-y-6">
+                {actionMessage && (
+                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-green-700">
+                            {actionMessage}
+                        </p>
+                    </div>
+                )}
+                {customerDetailsLoading && (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-blue-800">
+                            Loading complete customer information...
+                        </p>
+                    </div>
+                )}
+
+                {customerDetailsError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                        <p className="text-sm font-semibold text-red-700">
+                            {customerDetailsError}
+                        </p>
+                    </div>
+                )}
                 <div className="bg-white rounded-2xl shadow p-6">
                     <h1 className="text-3xl font-bold text-slate-900">
                         Customer Management
@@ -349,12 +880,46 @@ export default function CustomerManagement() {
                 </div>
 
                 <div className="grid grid-cols-2 xl:grid-cols-6 gap-4">
-                    <SummaryCard title="Total Customers" value="3,425" icon={Users} />
-                    <SummaryCard title="Active Customers" value="3,201" color="text-green-600" icon={UserCheck} />
-                    <SummaryCard title="Pending Verification" value="104" color="text-orange-500" icon={ShieldCheck} />
-                    <SummaryCard title="Suspended" value="17" color="text-red-600" icon={Ban} />
-                    <SummaryCard title="VIP Customers" value="95" color="text-purple-600" icon={Crown} />
-                    <SummaryCard title="Fraud Alerts" value="8" color="text-red-600" icon={AlertTriangle} />
+                    <SummaryCard
+                        title="Total Customers"
+                        value={customerSummary.total.toLocaleString()}
+                        icon={Users}
+                    />
+
+                    <SummaryCard
+                        title="Active Customers"
+                        value={customerSummary.active.toLocaleString()}
+                        color="text-green-600"
+                        icon={UserCheck}
+                    />
+
+                    <SummaryCard
+                        title="Pending Verification"
+                        value={customerSummary.pending.toLocaleString()}
+                        color="text-orange-500"
+                        icon={ShieldCheck}
+                    />
+
+                    <SummaryCard
+                        title="Suspended"
+                        value={customerSummary.suspended.toLocaleString()}
+                        color="text-red-600"
+                        icon={Ban}
+                    />
+
+                    <SummaryCard
+                        title="VIP Customers"
+                        value={customerSummary.vip.toLocaleString()}
+                        color="text-purple-600"
+                        icon={Crown}
+                    />
+
+                    <SummaryCard
+                        title="Fraud Alerts"
+                        value={customerSummary.fraudAlerts.toLocaleString()}
+                        color="text-red-600"
+                        icon={AlertTriangle}
+                    />
                 </div>
 
                 <div className="bg-white rounded-xl shadow p-5">
@@ -400,6 +965,26 @@ export default function CustomerManagement() {
                         </div>
                     </div>
 
+                    {customersLoading && (
+                        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+                            <p className="text-sm font-semibold text-blue-800">
+                                Loading customer records from the HelpNova backend...
+                            </p>
+                        </div>
+                    )}
+
+                    {customersError && (
+                        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                            <p className="font-semibold text-red-800">
+                                Unable to load customers
+                            </p>
+
+                            <p className="mt-1 text-sm text-red-700">
+                                {customersError}
+                            </p>
+                        </div>
+                    )}
+
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[1200px] text-sm">
                             <thead>
@@ -436,7 +1021,7 @@ export default function CustomerManagement() {
                                                         />
                                                     ) : (
                                                         <span className="w-full h-full rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">
-                                                            {getCustomerInitials(customer.name)}
+                                                                {getCustomerInitials(customer.name)}
                                                         </span>
                                                     )}
 
@@ -535,7 +1120,8 @@ export default function CustomerManagement() {
                                         <td>
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => setSelectedCustomer(customer)}
+                                                    type="button"
+                                                    onClick={() => openCustomerRecord(customer)}
                                                     title="View customer"
                                                     className="p-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100"
                                                 >
@@ -543,18 +1129,41 @@ export default function CustomerManagement() {
                                                 </button>
 
                                                 <button
-                                                    title="Verify customer"
-                                                    className="p-2 rounded-lg bg-green-50 text-green-700 hover:bg-green-100"
+                                                    type="button"
+                                                    onClick={() => handleVerifyCustomer(customer.id)}
+                                                    title={
+                                                        customer.verification === "Verified"
+                                                            ? "Customer already verified"
+                                                            : "Verify customer"
+                                                    }
+                                                    disabled={customer.verification === "Verified"}
+                                                    className={`p-2 rounded-lg transition ${customer.verification === "Verified"
+                                                            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                                            : "bg-green-50 text-green-700 hover:bg-green-100"
+                                                        }`}
                                                 >
                                                     <ShieldCheck size={16} />
                                                 </button>
 
-                                                <button
-                                                    title="Suspend customer"
-                                                    className="p-2 rounded-lg bg-red-50 text-red-700 hover:bg-red-100"
-                                                >
-                                                    <Ban size={16} />
-                                                </button>
+                                                {customer.status === "Active" ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSuspendCustomer(customer.id)}
+                                                        title="Suspend customer"
+                                                        className="p-2 rounded-lg bg-red-50 text-red-700 hover:bg-red-100"
+                                                    >
+                                                        <Ban size={16} />
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleReactivateCustomer(customer.id)}
+                                                        title="Reactivate customer"
+                                                        className="p-2 rounded-lg bg-green-50 text-green-700 hover:bg-green-100"
+                                                    >
+                                                        <RefreshCcw size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -571,7 +1180,7 @@ export default function CustomerManagement() {
                     </div>
                 </div>
             </div>
-
+                       
             {selectedCustomer && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
                     <div className="bg-slate-100 w-full max-w-5xl h-full overflow-y-auto shadow-2xl">
@@ -604,7 +1213,7 @@ export default function CustomerManagement() {
                                             />
                                         ) : (
                                             <span className="w-full h-full rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-3xl font-bold">
-                                                {getCustomerInitials(selectedCustomer.name)}
+                                                    {getCustomerInitials(selectedCustomer.name)}
                                             </span>
                                         )}
 
@@ -875,7 +1484,11 @@ export default function CustomerManagement() {
                                     <CustomerLine
                                         icon={CreditCard}
                                         label="Escrow Payments"
-                                        value={`NGN ${selectedCustomer.escrowPayments.toLocaleString()}`}
+                                        value={`NGN ${Number(
+                                            selectedCustomer.escrowBalance ??
+                                            selectedCustomer.escrowPayments ??
+                                            0
+                                        ).toLocaleString()}`}
                                     />
                                     <CustomerLine
                                         icon={ShieldCheck}
@@ -1042,6 +1655,335 @@ export default function CustomerManagement() {
                                 <CustomerHealthRecommendation
                                     customer={selectedCustomer}
                                 />
+                            </CustomerSection>
+
+                            <CustomerSection title="Customer Job History">
+                                {Array.isArray(selectedCustomer.jobs) &&
+                                    selectedCustomer.jobs.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[850px] text-sm">
+                                            <thead>
+                                                <tr className="border-b text-left text-slate-500">
+                                                    <th className="px-3 py-3">Date</th>
+                                                    <th className="px-3 py-3">Service</th>
+                                                    <th className="px-3 py-3">Description</th>
+                                                    <th className="px-3 py-3">Location</th>
+                                                    <th className="px-3 py-3">Status</th>
+                                                </tr>
+                                            </thead>
+
+                                            <tbody>
+                                                {selectedCustomer.jobs.map((job) => {
+                                                    const location = [
+                                                        job.area,
+                                                        job.city,
+                                                        job.state,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(", ");
+
+                                                    return (
+                                                        <tr
+                                                            key={job.job_id}
+                                                            className="border-b last:border-b-0 hover:bg-slate-50"
+                                                        >
+                                                            <td className="px-3 py-4 text-slate-600 whitespace-nowrap">
+                                                                {job.created_at
+                                                                    ? new Date(
+                                                                        job.created_at
+                                                                    ).toLocaleString()
+                                                                    : "Not available"}
+                                                            </td>
+
+                                                            <td className="px-3 py-4">
+                                                                <p className="font-semibold text-slate-900">
+                                                                    {job.title || "Untitled Service"}
+                                                                </p>
+
+                                                                <p className="mt-1 text-xs text-slate-500">
+                                                                    {job.job_id}
+                                                                </p>
+                                                            </td>
+
+                                                            <td className="px-3 py-4 text-slate-600">
+                                                                {job.description ||
+                                                                    "No description provided"}
+                                                            </td>
+
+                                                            <td className="px-3 py-4 text-slate-600">
+                                                                {location || "Not provided"}
+                                                            </td>
+
+                                                            <td className="px-3 py-4">
+                                                                <span
+                                                                    className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${jobStatusBadge(
+                                                                        job.status
+                                                                    )}`}
+                                                                >
+                                                                    {formatCustomerLabel(
+                                                                        job.status || "unknown"
+                                                                    )}
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center">
+                                        <Briefcase
+                                            size={28}
+                                            className="mx-auto text-slate-400"
+                                        />
+
+                                        <p className="mt-3 font-semibold text-slate-700">
+                                            No jobs recorded
+                                        </p>
+
+                                        <p className="mt-1 text-sm text-slate-500">
+                                            This customer has not created any service request.
+                                        </p>
+                                    </div>
+                                )}
+
+                                <CustomerSection title="Payment History">
+                                    {Array.isArray(selectedCustomer.payments) &&
+                                        selectedCustomer.payments.length > 0 ? (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full min-w-[1000px] text-sm">
+                                                <thead>
+                                                    <tr className="border-b text-left text-slate-500">
+                                                        <th className="px-3 py-3">Payment Reference</th>
+                                                        <th className="px-3 py-3">Job ID</th>
+                                                        <th className="px-3 py-3">Amount</th>
+                                                        <th className="px-3 py-3">Platform Fee</th>
+                                                        <th className="px-3 py-3">Worker Amount</th>
+                                                        <th className="px-3 py-3">Status</th>
+                                                        <th className="px-3 py-3">Payment Date</th>
+                                                    </tr>
+                                                </thead>
+
+                                                <tbody>
+                                                    {selectedCustomer.payments.map((payment) => {
+                                                        const status = String(
+                                                            payment.status || "pending"
+                                                        ).toLowerCase();
+
+                                                        return (
+                                                            <tr
+                                                                key={payment.payment_id || payment.id}
+                                                                className="border-b last:border-b-0 hover:bg-slate-50"
+                                                            >
+                                                                <td className="px-3 py-4">
+                                                                    <p className="font-semibold text-slate-900">
+                                                                        {payment.payment_reference ||
+                                                                            "Not available"}
+                                                                    </p>
+                                                                </td>
+
+                                                                <td className="px-3 py-4 text-slate-600">
+                                                                    {payment.job_id || "Not available"}
+                                                                </td>
+
+                                                                <td className="px-3 py-4 font-semibold text-slate-900">
+                                                                    NGN{" "}
+                                                                    {Number(
+                                                                        payment.amount || 0
+                                                                    ).toLocaleString()}
+                                                                </td>
+
+                                                                <td className="px-3 py-4">
+                                                                    NGN{" "}
+                                                                    {Number(
+                                                                        payment.platform_fee || 0
+                                                                    ).toLocaleString()}
+                                                                </td>
+
+                                                                <td className="px-3 py-4">
+                                                                    NGN{" "}
+                                                                    {Number(
+                                                                        payment.worker_amount || 0
+                                                                    ).toLocaleString()}
+                                                                </td>
+
+                                                                <td className="px-3 py-4">
+                                                                    <span
+                                                                        className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${paymentStatusBadge(
+                                                                            status
+                                                                        )}`}
+                                                                    >
+                                                                        {formatCustomerLabel(status)}
+                                                                    </span>
+                                                                </td>
+
+                                                                <td className="px-3 py-4 text-slate-600">
+                                                                    {payment.paid_at
+                                                                        ? new Date(
+                                                                            payment.paid_at
+                                                                        ).toLocaleString()
+                                                                        : payment.released_at
+                                                                            ? new Date(
+                                                                                payment.released_at
+                                                                            ).toLocaleString()
+                                                                            : payment.created_at
+                                                                                ? new Date(
+                                                                                    payment.created_at
+                                                                                ).toLocaleString()
+                                                                                : "Not available"}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-10 text-center">
+                                            <CreditCard
+                                                size={32}
+                                                className="mx-auto text-slate-400"
+                                            />
+
+                                            <p className="mt-3 font-semibold text-slate-700">
+                                                No payment records found
+                                            </p>
+
+                                            <p className="mt-1 text-sm text-slate-500">
+                                                Payments made by this customer will appear here.
+                                            </p>
+                                        </div>
+                                    )}
+                                </CustomerSection>
+
+                                <CustomerSection title="Worker Interaction History">
+
+                                    {selectedCustomer.workerInteractions?.length ? (
+
+                                        <div className="overflow-x-auto">
+
+                                            <table className="w-full text-sm">
+
+                                                <thead>
+
+                                                    <tr className="border-b">
+
+                                                        <th className="py-3 text-left">Worker</th>
+
+                                                        <th>Profession</th>
+
+                                                        <th>Assignments</th>
+
+                                                        <th>Completed</th>
+
+                                                        <th>Your Rating</th>
+
+                                                        <th>Verification</th>
+
+                                                        <th>Last Job</th>
+
+                                                    </tr>
+
+                                                </thead>
+
+                                                <tbody>
+
+                                                    {selectedCustomer.workerInteractions.map((worker) => (
+
+                                                        <tr
+                                                            key={worker.worker_id}
+                                                            className="border-b"
+                                                        >
+
+                                                            <td className="py-4">
+
+                                                                <div className="font-semibold">
+
+                                                                    {worker.full_name}
+
+                                                                </div>
+
+                                                                <div className="text-xs text-slate-500">
+
+                                                                    {worker.phone_number}
+
+                                                                </div>
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                {worker.profession}
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                {worker.total_assignments}
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                {worker.completed_jobs}
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                ⭐ {worker.customer_average_rating}
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs">
+
+                                                                    {worker.verification_level}
+
+                                                                </span>
+
+                                                            </td>
+
+                                                            <td>
+
+                                                                <div>
+
+                                                                    {worker.last_job_title}
+
+                                                                </div>
+
+                                                                <div className="text-xs text-slate-500">
+
+                                                                    {worker.last_job_status}
+
+                                                                </div>
+
+                                                            </td>
+
+                                                        </tr>
+
+                                                    ))}
+
+                                                </tbody>
+
+                                            </table>
+
+                                        </div>
+
+                                    ) : (
+
+                                        <div className="text-slate-500">
+
+                                            No worker interaction history available.
+
+                                        </div>
+
+                                    )}
+
+                                </CustomerSection>
+
                             </CustomerSection>
 
                             <CustomerSection title="Recent Activity">
@@ -1281,8 +2223,7 @@ export default function CustomerManagement() {
                                                     setCustomerAction({
                                                         type: "blacklist",
                                                         title: "Blacklist Customer",
-                                                        description: `Permanently restrict ${selectedCustomer.name} from creating new HelpNova service requests.`,
-                                                        confirmLabel: "Blacklist",
+                                                        description: `Open all service requests and completed jobs belonging to ${selectedCustomer.name}.`,
                                                     })
                                                 }
                                             />
@@ -1743,4 +2684,55 @@ function typeBadge(type) {
     if (type === "Fraud Watch") return "bg-red-100 text-red-700";
     return "bg-slate-100 text-slate-700";
 }
-  
+
+function jobStatusBadge(status) {
+    const normalizedStatus = String(status || "")
+        .trim()
+        .toLowerCase();
+
+    switch (normalizedStatus) {
+        case "completed":
+            return "bg-green-100 text-green-700";
+
+        case "in_progress":
+        case "in progress":
+            return "bg-blue-100 text-blue-700";
+
+        case "assigned":
+        case "accepted":
+            return "bg-purple-100 text-purple-700";
+
+        case "pending":
+        case "open":
+            return "bg-orange-100 text-orange-700";
+
+        case "cancelled":
+        case "canceled":
+        case "rejected":
+            return "bg-red-100 text-red-700";
+
+        default:
+            return "bg-slate-100 text-slate-700";
+    }
+}
+
+
+function paymentStatusBadge(status) {
+    switch (String(status || "").toLowerCase()) {
+        case "paid":
+            return "bg-blue-100 text-blue-700";
+
+        case "released":
+            return "bg-green-100 text-green-700";
+
+        case "refunded":
+            return "bg-purple-100 text-purple-700";
+
+        case "failed":
+            return "bg-red-100 text-red-700";
+
+        case "pending":
+        default:
+            return "bg-orange-100 text-orange-700";
+    }
+}
