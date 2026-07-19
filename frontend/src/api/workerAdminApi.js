@@ -1,24 +1,18 @@
 import api from "./api";
 
 /**
- * Return every worker visible to the HelpNova administrator.
+ * Return all workers available to the admin dashboard.
  */
 export async function getAdminWorkers(status = "") {
-    const params = {};
-
-    if (status) {
-        params.status = status;
-    }
-
     const response = await api.get("/admin/workers", {
-        params,
+        params: status ? { status } : {},
     });
 
     return response.data;
 }
 
 /**
- * Return the complete administrative record for one worker.
+ * Return the complete 360-degree record for one worker.
  */
 export async function getAdminWorkerDetails(workerId) {
     if (!workerId) {
@@ -33,7 +27,7 @@ export async function getAdminWorkerDetails(workerId) {
 }
 
 /**
- * Approve a pending or rejected worker.
+ * Approve a pending worker.
  */
 export async function approveAdminWorker(workerId) {
     if (!workerId) {
@@ -78,7 +72,7 @@ export async function reactivateAdminWorker(workerId) {
 }
 
 /**
- * Reject a worker application.
+ * Reject a pending worker application.
  */
 export async function rejectAdminWorker(workerId) {
     if (!workerId) {
@@ -92,6 +86,12 @@ export async function rejectAdminWorker(workerId) {
     return response.data;
 }
 
+/**
+ * Return the worker wallet, balance and transaction information.
+ *
+ * Backend endpoint:
+ * GET /wallet/{worker_id}
+ */
 export async function getAdminWorkerWallet(workerId) {
     if (!workerId) {
         throw new Error("Worker ID is required.");
