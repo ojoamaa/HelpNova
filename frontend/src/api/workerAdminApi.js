@@ -91,3 +91,15 @@ export async function rejectAdminWorker(workerId) {
 
     return response.data;
 }
+
+export async function getAdminWorkerWallet(workerId) {
+    if (!workerId) {
+        throw new Error("Worker ID is required.");
+    }
+
+    const response = await api.get(
+        `/wallet/${encodeURIComponent(workerId)}`
+    );
+
+    return response.data;
+}
