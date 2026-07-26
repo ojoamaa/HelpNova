@@ -6,3 +6,59 @@ __pycache__/
 venv/
 backend/venv/
 generated_receipts/
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Frontend dependencies and builds
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Runtime uploads
+uploads/
+backend/uploads/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup archives
+*.zip
+*.rar
+
+# Backup and duplicate folders
+HelpNova Extras/
+backend/backend/
+frontend/src/src/
+mobile/
+
+# Temporary project notes and patch instructions
+*_FIX.txt
+RUN_THIS_PROJECT.txt
+CHANGES_APPLIED.txt
+CORRECTION_SUMMARY.txt
+PHOTO_EDIT_FIX.txt
+frontend/README.txt
+
+# Temporary alternative source files
+frontend/src/helpnova_sprint2_final_refinements/
+frontend/src/pages/admin/AdminFinanceDashboard.integrated.jsx
+frontend/src/pages/worker/WorkerDashboard.activation.jsx
+frontend/src/pages/worker/WorkerDashboard.final-refinements.jsx
+frontend/src/pages/worker/WorkerDashboard.refined.jsx
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
