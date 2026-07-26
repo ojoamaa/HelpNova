@@ -573,7 +573,7 @@ export default function WorkerManagement() {
             "bronze"
         ).toLowerCase();
 
-        const normalizedWorker = {
+        return {
             ...worker,
 
             id:
@@ -702,17 +702,13 @@ export default function WorkerManagement() {
             // consumer sees the approved guarantor state consistently.
             guarantor_status: String(
                 worker.guarantor_status ??
-                worker.guarantor_verification_status ??
                 worker.guarantorStatus ??
-                worker.guarantorVerificationStatus ??
                 "not submitted"
             ).toLowerCase(),
 
             guarantorStatus: titleCase(
                 worker.guarantor_status ??
-                worker.guarantor_verification_status ??
                 worker.guarantorStatus ??
-                worker.guarantorVerificationStatus ??
                 "not submitted"
             ),
 
@@ -778,19 +774,6 @@ export default function WorkerManagement() {
                 worker.customerComplaints ??
                 0
             ),
-        };
-
-        const activation = getWorkerActivation(normalizedWorker);
-
-        return {
-            ...normalizedWorker,
-            trustScore: activation.trustScore,
-            trust_score: activation.trustScore,
-            profileCompletion: activation.profileCompletion,
-            profile_completion: activation.profileCompletion,
-            activationScore: activation.score,
-            activation_percentage: activation.score,
-            matchingPriority: activation.priority.label,
         };
     }
 

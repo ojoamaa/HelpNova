@@ -178,11 +178,7 @@ export default function WorkerDashboard() {
                     "HelpNova Worker",
 
                 guarantor_status:
-                    mergedWorker.guarantor_status ||
-                    mergedWorker.guarantor_verification_status ||
-                    mergedWorker.guarantorStatus ||
-                    mergedWorker.guarantorVerificationStatus ||
-                    "not_started",
+                    mergedWorker.guarantor_status || "not_started",
 
                 verification_status:
                     mergedWorker.verification_status || "pending",
@@ -226,13 +222,8 @@ export default function WorkerDashboard() {
         mergedWorker.is_available === true;
 
     const guarantorApproved =
-        String(
-            mergedWorker.guarantor_status ||
-            mergedWorker.guarantor_verification_status ||
-            mergedWorker.guarantorStatus ||
-            mergedWorker.guarantorVerificationStatus ||
-            ""
-        ).toLowerCase() === "approved";
+        String(mergedWorker.guarantor_status).toLowerCase() ===
+        "approved";
 
     async function toggleAvailability() {
         if (!workerId || availabilityBusy) {
