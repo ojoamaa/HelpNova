@@ -1,24 +1,16 @@
-from fastapi import APIRouter
-from fastapi import Depends
-
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.schemas.user import UserCreate
-from app.schemas.user import UserResponse
-
-from app.services.auth_service import create_user
-
 from app.core.database import get_db
+from app.schemas.user import UserCreate, UserLogin, UserResponse
+from app.services.auth_service import authenticate_user, create_user
+from app.core.security import create_access_token
 
-from fastapi import HTTPException
-
-from app.schemas.user import UserLogin
-
-from app.services.auth_service import authenticate_user
 
 router = APIRouter(
     prefix="/auth",
-    tags=["Authentication"]
+    tags=["Authentication"],
 )
 
 
@@ -31,44 +23,63 @@ def auth_home():
 
 @router.post(
     "/register",
-    response_model=UserResponse
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 def register(
     user: UserCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    return {
-    "id": user.id,
-    "full_name": user.full_name,
-    "phone": user.phone,
-    "email": user.email,
-    "role": user.role
-}
+    try:
+        created_user = create_user(db, user)
+
+        return created_user
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this phone number or email already exists.",
+        )
+
+    except ValueError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
 
 @router.post("/login")
 def login(
     credentials: UserLogin,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     user = authenticate_user(
         db,
         credentials.phone,
-        credentials.password
+        credentials.password,
     )
 
     if not user:
         raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid phone number or password.",
         )
 
+    access_token = create_access_token(user.id, user.role)
+
     return {
-    "message": "Login successful",
-    "user": {
-        "id": user.id,
-        "full_name": user.full_name,
-        "phone": user.phone,
-        "email": user.email,
-        "role": user.role
+        "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "phone": user.phone,
+            "email": user.email,
+            "role": user.role,
+        },
     }
-}

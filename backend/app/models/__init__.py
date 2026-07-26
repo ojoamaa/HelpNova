@@ -7,3 +7,4 @@ from app.models.job import Job
 from app.models.job_assignment import JobAssignment
 from app.models.worker_location import WorkerLocation
 from app.models.job_photo import JobPhoto
+from app.models.guarantor import Guarantor

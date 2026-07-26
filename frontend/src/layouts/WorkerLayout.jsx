@@ -1,5 +1,5 @@
-﻿import { Link, Outlet } from "react-router-dom";
-import { Home, Briefcase, Wallet, User } from "lucide-react";
+import { Link, Outlet } from "react-router-dom";
+import { Home, Briefcase, Wallet, User, ShieldCheck } from "lucide-react";
 
 export default function WorkerLayout() {
     return (
@@ -16,7 +16,7 @@ export default function WorkerLayout() {
             </div>
 
             <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow">
-                <div className="max-w-md mx-auto grid grid-cols-4 text-center py-2">
+                <div className="max-w-md mx-auto grid grid-cols-5 text-center py-2">
                     <Link to="/worker" className="text-xs text-slate-700">
                         <Home className="mx-auto" size={22} />
                         Home
@@ -30,6 +30,11 @@ export default function WorkerLayout() {
                     <Link to="/worker/wallet" className="text-xs text-slate-700">
                         <Wallet className="mx-auto" size={22} />
                         Wallet
+                    </Link>
+
+                    <Link to="/worker/guarantors" className="text-xs text-slate-700">
+                        <ShieldCheck className="mx-auto" size={22} />
+                        Trust
                     </Link>
 
                     <Link to="/worker/profile" className="text-xs text-slate-700">

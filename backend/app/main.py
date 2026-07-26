@@ -1,12 +1,18 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect, text
 
 from app.core.database import Base
 from app.core.database import engine
  
 from app.models import User
+from app.models.guarantor import Guarantor
 
 from app.api.auth.routes import router as auth_router
+from app.api.guarantors.routes import router as guarantors_router
 
 from app.api.ai_recommendation.routes import (
     router as ai_recommendation_router,
@@ -60,6 +66,16 @@ from app.api.live_tracking.routes import router as live_tracking_router
 from app.api.job_timeline.routes import router as job_timeline_router
 
 Base.metadata.create_all(bind=engine)
+
+# Lightweight compatibility migration for existing databases created before
+# the guarantor module was introduced.
+if "workers" in inspect(engine).get_table_names():
+    worker_columns = {column["name"] for column in inspect(engine).get_columns("workers")}
+    if "guarantor_status" not in worker_columns:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE workers ADD COLUMN guarantor_status VARCHAR DEFAULT 'not_started'"
+            ))
 
 from app.api.customer_history.routes import router as customer_history_router
 
@@ -128,6 +144,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+UPLOADS_DIR = Path("uploads")
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -160,6 +180,7 @@ from app.api.operations.routes import router as operations_router
 Base.metadata.create_all(bind=engine)
 
 app.include_router(auth_router)
+app.include_router(guarantors_router)
 app.include_router(workers_router)
 app.include_router(companies_router)
 app.include_router(categories_router)

@@ -1,5 +1,4 @@
 import api from "./api";
-
 /**
  * Ensures that a required worker ID exists before making a request.
  */
@@ -301,4 +300,18 @@ export async function getAdminWorkerWallet(workerId) {
     return normalizeWorkerWalletResponse(
         response.data
     );
+}
+
+/**
+ * Load only a worker's normalized wallet transactions.
+ *
+ * This reuses GET /wallet/{worker_id}, because that endpoint
+ * already returns both wallet information and transactions.
+ */
+export async function getAdminWorkerWalletTransactions(workerId) {
+    const walletData = await getAdminWorkerWallet(workerId);
+
+    return Array.isArray(walletData?.transactions)
+        ? walletData.transactions
+        : [];
 }

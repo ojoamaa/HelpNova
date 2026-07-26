@@ -1,4 +1,4 @@
-﻿import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import WorkerLayout from "./layouts/WorkerLayout";
 import WorkerDashboard from "./pages/worker/WorkerDashboard";
 import WorkerJobs from "./pages/worker/WorkerJobs";
@@ -11,6 +11,10 @@ import LiveOperationsCenter from "./pages/admin/LiveOperationsCenter";
 import AdminLayout from "./layouts/AdminLayout";
 import WorkerManagement from "./pages/admin/WorkerManagement";
 import CustomerManagement from "./pages/admin/CustomerManagement";
+import WorkerGuarantors from "./pages/worker/WorkerGuarantors";
+import GuarantorForm from "./pages/GuarantorForm";
+import GuarantorReview from "./pages/admin/GuarantorReview";
+import WorkerLogin from "./pages/worker/WorkerLogin";
 
 function Home() {
     return (
@@ -149,8 +153,12 @@ export default function App() {
     return (
         <BrowserRouter>
             <Routes>
-
                 <Route path="/" element={<Home />} />
+
+                <Route
+                    path="/worker/login"
+                    element={<WorkerLogin />}
+                />
 
                 <Route path="/worker" element={<WorkerLayout />}>
                     <Route index element={<WorkerDashboard />} />
@@ -158,16 +166,30 @@ export default function App() {
                     <Route path="wallet" element={<WorkerWallet />} />
                     <Route path="profile" element={<WorkerProfile />} />
                     <Route
-                        path="/worker/current-job"
+                        path="guarantors"
+                        element={<WorkerGuarantors />}
+                    />
+                    <Route
+                        path="current-job"
                         element={<WorkerCurrentJob />}
                     />
                 </Route>
 
-                <Route path="/customer" element={<CustomerApp />} />
+                <Route
+                    path="/customer"
+                    element={<CustomerApp />}
+                />
+
+                <Route
+                    path="/guarantor/:token"
+                    element={<GuarantorForm />}
+                />
 
                 <Route path="/admin" element={<AdminLayout />}>
-
-                    <Route index element={<AdminDashboard />} />
+                    <Route
+                        index
+                        element={<AdminDashboard />}
+                    />
 
                     <Route
                         path="command-center"
@@ -184,11 +206,18 @@ export default function App() {
                         element={<LiveOperationsCenter />}
                     />
 
-                    <Route path="workers" element={<WorkerManagement />} />
-
-                   
                     <Route
-                        path="/admin/customers"
+                        path="workers"
+                        element={<WorkerManagement />}
+                    />
+
+                    <Route
+                        path="guarantors"
+                        element={<GuarantorReview />}
+                    />
+
+                    <Route
+                        path="customers"
                         element={<CustomerManagement />}
                     />
 
@@ -196,9 +225,14 @@ export default function App() {
                         path="fraud-watch"
                         element={
                             <div className="p-6 bg-white rounded-2xl shadow">
-                                <h1 className="text-2xl font-bold">Fraud Watch</h1>
+                                <h1 className="text-2xl font-bold">
+                                    Fraud Watch
+                                </h1>
+
                                 <p className="text-slate-600 mt-2">
-                                    Suspicious accounts, fake jobs, payment risk and abnormal behavior will be monitored here.
+                                    Suspicious accounts, fake jobs,
+                                    payment risk and abnormal behavior
+                                    will be monitored here.
                                 </p>
                             </div>
                         }

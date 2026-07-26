@@ -7,6 +7,7 @@ import {
   UserRound,
   BarChart3,
   ShieldAlert,
+  ShieldCheck,
   Home,
 } from "lucide-react";
 
@@ -35,6 +36,11 @@ const adminLinks = [
     title: "Workers",
     path: "/admin/workers",
     icon: Users,
+  },
+  {
+    title: "Guarantors",
+    path: "/admin/guarantors",
+    icon: ShieldCheck,
   },
   {
     title: "Customers",

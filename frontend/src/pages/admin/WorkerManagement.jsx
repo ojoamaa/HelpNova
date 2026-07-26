@@ -1,5 +1,4 @@
-﻿import { useEffect, useState } from "react";
-
+import { useEffect, useMemo, useState } from "react";
 import {
     Search,
     Eye,
@@ -21,7 +20,18 @@ import {
     AlertTriangle,
     Repeat,
     RefreshCcw,
+    ArrowDownLeft,
+    ArrowUpRight,
+    ChevronLeft,
+    ChevronRight,
+    CreditCard,
+    Download,
+    Filter,
+    ReceiptText,
+    RotateCcw,
 } from "lucide-react";
+
+import { getWorkerActivation } from "../../utils/workerActivation";
 
 import {
     getAdminWorkers,
@@ -76,11 +86,11 @@ const initialDocuments = [
         fileSize: "3.2 MB",
     },
     {
-        title: "Professional Certificate",
+        title: "Professional Licences & Certifications",
         status: "Pending Review",
         uploadedOn: "15 Jun 2026",
         verifiedBy: "Pending",
-        fileType: "Certificate PDF",
+        fileType: "Licence / Certificate PDF",
         fileSize: "2.9 MB",
     },
 ];
@@ -129,15 +139,40 @@ function calculatePaymentTotal(payments = [], acceptedStatuses = []) {
 }
 
 function normalizeWorkerDetails(apiResponse, fallbackWorker = {}) {
-    const workerData = apiResponse?.worker || {};
-    const assignments = Array.isArray(apiResponse?.assignments)
-        ? apiResponse.assignments
+    const responseData = apiResponse?.data ?? apiResponse ?? {};
+
+    // The admin details endpoint has existed in both wrapped and direct
+    // response formats. Accept either so opening a worker never discards
+    // fields already returned by the workers list.
+    const workerData =
+        responseData?.worker ??
+        responseData?.worker_details ??
+        responseData?.profile ??
+        (responseData && typeof responseData === "object"
+            ? responseData
+            : {});
+
+    const assignmentsSource =
+        responseData?.assignments ??
+        workerData?.assignments ??
+        [];
+    const reviewsSource =
+        responseData?.reviews ??
+        workerData?.reviews ??
+        [];
+    const paymentsSource =
+        responseData?.payments ??
+        workerData?.payments ??
+        [];
+
+    const assignments = Array.isArray(assignmentsSource)
+        ? assignmentsSource
         : [];
-    const reviews = Array.isArray(apiResponse?.reviews)
-        ? apiResponse.reviews
+    const reviews = Array.isArray(reviewsSource)
+        ? reviewsSource
         : [];
-    const payments = Array.isArray(apiResponse?.payments)
-        ? apiResponse.payments
+    const payments = Array.isArray(paymentsSource)
+        ? paymentsSource
         : [];
 
     const acceptedAssignments = assignments.filter((assignment) =>
@@ -222,6 +257,31 @@ function normalizeWorkerDetails(apiResponse, fallbackWorker = {}) {
         fallbackWorker.availability ||
         "offline"
     ).toLowerCase();
+
+    const downloadWorkerDocument = (document) => {
+        if (!document) {
+            showToast("No document selected.");
+            return;
+        }
+
+        if (document.fileUrl) {
+            const downloadLink = window.document.createElement("a");
+
+            downloadLink.href = document.fileUrl;
+            downloadLink.download =
+                document.fileName || document.title || "worker-document";
+
+            window.document.body.appendChild(downloadLink);
+            downloadLink.click();
+            window.document.body.removeChild(downloadLink);
+
+            return;
+        }
+
+        showToast(
+            `${document.title} is not connected to backend file storage yet.`
+        );
+    };
 
     return {
         ...fallbackWorker,
@@ -413,10 +473,26 @@ function normalizeWorkerDetails(apiResponse, fallbackWorker = {}) {
                 "pending"
             ),
 
+        // Preserve the backend field used by the activation utility.
+        // Do not make guarantor completion depend on overall worker approval.
+        guarantor_status: String(
+            workerData.guarantor_status ??
+            workerData.guarantor_verification_status ??
+            workerData.guarantorStatus ??
+            fallbackWorker.guarantor_status ??
+            fallbackWorker.guarantor_verification_status ??
+            fallbackWorker.guarantorStatus ??
+            "not submitted"
+        ).toLowerCase(),
+
         guarantorStatus:
             titleCase(
-                workerData.guarantor_status ||
-                fallbackWorker.guarantorStatus ||
+                workerData.guarantor_status ??
+                workerData.guarantor_verification_status ??
+                workerData.guarantorStatus ??
+                fallbackWorker.guarantor_status ??
+                fallbackWorker.guarantor_verification_status ??
+                fallbackWorker.guarantorStatus ??
                 "not submitted"
             ),
 
@@ -455,6 +531,7 @@ export default function WorkerManagement() {
     const [showDocuments, setShowDocuments] = useState(false);
     const [selectedDocument, setSelectedDocument] = useState(null);
     const [documents, setDocuments] = useState(initialDocuments);
+    const [documentWorkspaceMode, setDocumentWorkspaceMode] = useState("list");
     const [documentAction, setDocumentAction] = useState(null);
     const [rejectionReason, setRejectionReason] = useState("");
     const [toast, setToast] = useState(null);
@@ -463,7 +540,20 @@ export default function WorkerManagement() {
 
     const [workerActionLoading, setWorkerActionLoading] = useState(false);
     const [workerActionType, setWorkerActionType] = useState("");
+    const [showWallet, setShowWallet] = useState(false);
+    const [walletLoading, setWalletLoading] = useState(false);
+    const [walletError, setWalletError] = useState("");
+    const [walletData, setWalletData] = useState(null);
+    const [walletTransactions, setWalletTransactions] = useState([]);
+    
 
+    const [walletSearch, setWalletSearch] = useState("");
+    const [walletFilter, setWalletFilter] = useState("all");
+
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
+
+    const [walletPage, setWalletPage] = useState(1);
+    const walletPageSize = 10;
     function normalizeWorker(worker) {
         const verificationStatus = String(
             worker.verification_status ||
@@ -483,7 +573,7 @@ export default function WorkerManagement() {
             "bronze"
         ).toLowerCase();
 
-        return {
+        const normalizedWorker = {
             ...worker,
 
             id:
@@ -608,10 +698,23 @@ export default function WorkerManagement() {
                 0
             ),
 
-            guarantorStatus:
+            // Keep both snake_case and camelCase so every frontend
+            // consumer sees the approved guarantor state consistently.
+            guarantor_status: String(
                 worker.guarantor_status ??
+                worker.guarantor_verification_status ??
                 worker.guarantorStatus ??
-                "Not submitted",
+                worker.guarantorVerificationStatus ??
+                "not submitted"
+            ).toLowerCase(),
+
+            guarantorStatus: titleCase(
+                worker.guarantor_status ??
+                worker.guarantor_verification_status ??
+                worker.guarantorStatus ??
+                worker.guarantorVerificationStatus ??
+                "not submitted"
+            ),
 
             emergencyContactStatus:
                 worker.emergency_contact_status ??
@@ -676,6 +779,19 @@ export default function WorkerManagement() {
                 0
             ),
         };
+
+        const activation = getWorkerActivation(normalizedWorker);
+
+        return {
+            ...normalizedWorker,
+            trustScore: activation.trustScore,
+            trust_score: activation.trustScore,
+            profileCompletion: activation.profileCompletion,
+            profile_completion: activation.profileCompletion,
+            activationScore: activation.score,
+            activation_percentage: activation.score,
+            matchingPriority: activation.priority.label,
+        };
     }
 
     async function loadWorkers() {
@@ -710,6 +826,163 @@ export default function WorkerManagement() {
         }
     }
 
+    const normalizeWalletTransaction = (transaction, index) => {
+        const rawType = String(
+            transaction?.transaction_type ??
+            transaction?.type ??
+            transaction?.category ??
+            "transaction"
+        ).toLowerCase();
+
+        const rawStatus = String(
+            transaction?.status ??
+            "completed"
+        ).toLowerCase();
+
+        const rawAmount = Number(
+            transaction?.amount ??
+            transaction?.value ??
+            0
+        );
+
+        const direction =
+            String(transaction?.direction ?? "").toLowerCase() ||
+            (
+                [
+                    "withdrawal",
+                    "debit",
+                    "commission",
+                    "platform_fee",
+                    "refund_debit",
+                ].includes(rawType)
+                    ? "debit"
+                    : "credit"
+            );
+
+        return {
+            id:
+                transaction?.transaction_id ??
+                transaction?.id ??
+                transaction?.reference ??
+                `TXN-${index + 1}`,
+
+            reference:
+                transaction?.reference ??
+                transaction?.payment_reference ??
+                transaction?.transaction_reference ??
+                "Not available",
+
+            type: rawType,
+            status: rawStatus,
+            amount: rawAmount,
+            direction,
+
+            description:
+                transaction?.description ??
+                transaction?.narration ??
+                transaction?.title ??
+                formatTransactionType(rawType),
+
+            createdAt:
+                transaction?.created_at ??
+                transaction?.transaction_date ??
+                transaction?.date ??
+                null,
+
+            jobId:
+                transaction?.job_id ??
+                null,
+
+            customerName:
+                transaction?.customer_name ??
+                transaction?.customer?.full_name ??
+                null,
+
+            paymentMethod:
+                transaction?.payment_method ??
+                transaction?.channel ??
+                null,
+
+            platformFee: Number(
+                transaction?.platform_fee ??
+                transaction?.commission ??
+                0
+            ),
+
+            workerAmount: Number(
+                transaction?.worker_amount ??
+                transaction?.net_amount ??
+                rawAmount
+            ),
+
+            raw: transaction,
+        };
+    };
+
+    async function loadWorkerWallet(worker) {
+        const workerId =
+            worker?.worker_id ??
+            worker?.id;
+
+        if (!workerId) {
+            showToast("Worker ID is missing.");
+            return;
+        }
+
+        try {
+            setWalletLoading(true);
+            setWalletError("");
+            setWalletPage(1);
+            setWalletSearch("");
+            setWalletFilter("all");
+            setSelectedTransaction(null);
+
+            setShowWallet(true);
+
+            const walletResponse =
+                await getAdminWorkerWallet(workerId);
+
+            const wallet =
+                walletResponse?.wallet ??
+                {};
+
+            const transactionPayload =
+                walletResponse?.transactions ??
+                [];
+
+            const normalizedTransactions = Array.isArray(transactionPayload)
+                ? transactionPayload.map(normalizeWalletTransaction)
+                : [];
+
+            setWalletData(wallet);
+            setWalletTransactions(normalizedTransactions);
+        } catch (err) {
+            console.error("Unable to load worker wallet:", err);
+
+            const message =
+                err?.response?.data?.detail ??
+                err?.response?.data?.message ??
+                "Unable to load this worker wallet.";
+
+            setWalletError(message);
+            setWalletData(null);
+            setWalletTransactions([]);
+        } finally {
+            setWalletLoading(false);
+        }
+    }
+
+    function closeWorkerWallet() {
+        setShowWallet(false);
+        setWalletData(null);
+        setWalletTransactions([]);
+        setWalletError("");
+        setWalletSearch("");
+        setWalletFilter("all");
+        setSelectedTransaction(null);
+        setWalletPage(1);
+    }
+
     const workerSummary = {
         total: workers.length,
 
@@ -740,6 +1013,188 @@ export default function WorkerManagement() {
                 ).toLowerCase() === "suspended"
         ).length,
     };
+
+    const filteredWalletTransactions = useMemo(() => {
+        const normalizedSearch = walletSearch
+            .trim()
+            .toLowerCase();
+
+        return walletTransactions.filter((transaction) => {
+            const matchesFilter = (() => {
+                if (walletFilter === "all") {
+                    return true;
+                }
+
+                if (walletFilter === "credits") {
+                    return transaction.direction === "credit";
+                }
+
+                if (walletFilter === "debits") {
+                    return transaction.direction === "debit";
+                }
+
+                if (walletFilter === "pending") {
+                    return transaction.status === "pending";
+                }
+
+                if (walletFilter === "completed") {
+                    return [
+                        "completed",
+                        "successful",
+                        "success",
+                        "paid",
+                        "released",
+                    ].includes(transaction.status);
+                }
+
+                if (walletFilter === "withdrawals") {
+                    return transaction.type.includes("withdraw");
+                }
+
+                if (walletFilter === "payments") {
+                    return (
+                        transaction.type.includes("payment") ||
+                        transaction.type.includes("earning") ||
+                        transaction.type.includes("job")
+                    );
+                }
+
+                if (walletFilter === "commissions") {
+                    return (
+                        transaction.type.includes("commission") ||
+                        transaction.type.includes("platform_fee")
+                    );
+                }
+
+                if (walletFilter === "refunds") {
+                    return transaction.type.includes("refund");
+                }
+
+                return true;
+            })();
+
+            if (!matchesFilter) {
+                return false;
+            }
+
+            if (!normalizedSearch) {
+                return true;
+            }
+
+            const searchableText = [
+                transaction.id,
+                transaction.reference,
+                transaction.description,
+                transaction.type,
+                transaction.status,
+                transaction.amount,
+                transaction.customerName,
+                transaction.jobId,
+            ]
+                .filter(Boolean)
+                .join(" ")
+                .toLowerCase();
+
+            return searchableText.includes(normalizedSearch);
+        });
+    }, [
+        walletTransactions,
+        walletSearch,
+        walletFilter,
+    ]);
+
+    const walletTransactionTotals = useMemo(() => {
+        return walletTransactions.reduce(
+            (totals, transaction) => {
+                const amount = Number(transaction.amount || 0);
+
+                if (transaction.direction === "credit") {
+                    totals.totalCredits += amount;
+                }
+
+                if (transaction.direction === "debit") {
+                    totals.totalDebits += amount;
+                }
+
+                if (
+                    transaction.status === "pending" &&
+                    transaction.type.includes("withdraw")
+                ) {
+                    totals.pendingWithdrawals += amount;
+                }
+
+                if (
+                    transaction.type.includes("commission") ||
+                    transaction.type.includes("platform_fee")
+                ) {
+                    totals.commissionPaid += amount;
+                }
+
+                return totals;
+            },
+            {
+                totalCredits: 0,
+                totalDebits: 0,
+                pendingWithdrawals: 0,
+                commissionPaid: 0,
+            }
+        );
+    }, [walletTransactions]);
+
+    const walletSummary = useMemo(() => {
+        const availableBalance = Number(
+            walletData?.balance ??
+            walletData?.available_balance ??
+            walletData?.wallet_balance ??
+            (
+                walletTransactionTotals.totalCredits -
+                walletTransactionTotals.totalDebits
+            )
+        );
+
+        const totalEarnings = Number(
+            walletData?.total_earnings ??
+            walletData?.lifetime_earnings ??
+            walletTransactionTotals.totalCredits
+        );
+
+        const pendingWithdrawal = Number(
+            walletData?.pending_withdrawal ??
+            walletData?.pending_withdrawals ??
+            walletTransactionTotals.pendingWithdrawals
+        );
+
+        return {
+            availableBalance,
+            totalEarnings,
+            pendingWithdrawal,
+            commissionPaid:
+                walletTransactionTotals.commissionPaid,
+        };
+    }, [
+        walletData,
+        walletTransactionTotals,
+    ]);
+
+    const totalWalletPages = Math.max(
+        1,
+        Math.ceil(
+            filteredWalletTransactions.length /
+            walletPageSize
+        )
+    );
+
+    const paginatedWalletTransactions =
+        filteredWalletTransactions.slice(
+            (walletPage - 1) * walletPageSize,
+            walletPage * walletPageSize
+        );
+
+    useEffect(() => {
+        if (walletPage > totalWalletPages) {
+            setWalletPage(totalWalletPages);
+        }
+    }, [walletPage, totalWalletPages]);
 
     async function handleViewWorker(worker) {
         const workerId =
@@ -780,6 +1235,391 @@ export default function WorkerManagement() {
         }
     }
 
+    function WalletSummaryCard({
+        title,
+        amount,
+        icon: Icon,
+        valueClassName = "text-slate-900",
+    }) {
+        return (
+            <div className="rounded-2xl bg-white p-5 shadow">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <p className="text-sm text-slate-500">
+                            {title}
+                        </p>
+
+                        <h3
+                            className={`mt-2 text-2xl font-bold ${valueClassName}`}
+                        >
+                            {formatCurrency(amount)}
+                        </h3>
+                    </div>
+
+                    <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
+                        <Icon size={21} />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    function WalletInformationLine({ label, value }) {
+        return (
+            <div className="rounded-xl border bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {label}
+                </p>
+
+                <p className="mt-2 break-all font-semibold text-slate-900">
+                    {value}
+                </p>
+            </div>
+        );
+    }
+
+    function WalletTransactionRow({
+        transaction,
+        onView,
+    }) {
+        const isCredit =
+            transaction.direction === "credit";
+
+        return (
+            <tr className="border-b last:border-b-0 hover:bg-slate-50">
+                <td className="px-3 py-4 text-slate-600">
+                    {formatDateTime(transaction.createdAt)}
+                </td>
+
+                <td className="px-3 py-4">
+                    <p className="font-semibold text-slate-900">
+                        {transaction.id}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                        {transaction.reference}
+                    </p>
+                </td>
+
+                <td className="px-3 py-4">
+                    <div className="flex items-center gap-2">
+                        <span
+                            className={`rounded-lg p-2 ${isCredit
+                                    ? "bg-green-50 text-green-600"
+                                    : "bg-red-50 text-red-600"
+                                }`}
+                        >
+                            {isCredit ? (
+                                <ArrowDownLeft size={16} />
+                            ) : (
+                                <ArrowUpRight size={16} />
+                            )}
+                        </span>
+
+                        <span className="font-medium">
+                            {formatTransactionType(
+                                transaction.type
+                            )}
+                        </span>
+                    </div>
+                </td>
+
+                <td className="max-w-[260px] px-3 py-4">
+                    <p className="truncate text-slate-700">
+                        {transaction.description}
+                    </p>
+                </td>
+
+                <td
+                    className={`px-3 py-4 text-right font-bold ${isCredit
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                >
+                    {isCredit ? "+" : "-"}
+                    {formatCurrency(transaction.amount)}
+                </td>
+
+                <td className="px-3 py-4">
+                    <TransactionStatusBadge
+                        status={transaction.status}
+                    />
+                </td>
+
+                <td className="px-3 py-4 text-center">
+                    <button
+                        type="button"
+                        onClick={() => onView(transaction)}
+                        className="rounded-lg bg-blue-50 p-2 text-blue-700 hover:bg-blue-100"
+                        title="View transaction"
+                    >
+                        <Eye size={17} />
+                    </button>
+                </td>
+            </tr>
+        );
+    }
+
+    function TransactionStatusBadge({ status }) {
+        const normalizedStatus =
+            String(status || "").toLowerCase();
+
+        let className =
+            "bg-slate-100 text-slate-700";
+
+        if (
+            [
+                "completed",
+                "successful",
+                "success",
+                "paid",
+                "released",
+            ].includes(normalizedStatus)
+        ) {
+            className =
+                "bg-green-100 text-green-700";
+        }
+
+        if (
+            [
+                "pending",
+                "processing",
+                "initiated",
+            ].includes(normalizedStatus)
+        ) {
+            className =
+                "bg-yellow-100 text-yellow-700";
+        }
+
+        if (
+            [
+                "failed",
+                "rejected",
+                "cancelled",
+                "canceled",
+            ].includes(normalizedStatus)
+        ) {
+            className =
+                "bg-red-100 text-red-700";
+        }
+
+        if (normalizedStatus === "refunded") {
+            className =
+                "bg-purple-100 text-purple-700";
+        }
+
+        return (
+            <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${className}`}
+            >
+                {capitalizeText(
+                    normalizedStatus || "unknown"
+                )}
+            </span>
+        );
+    }
+
+    function WalletPagination({
+        page,
+        totalPages,
+        totalRecords,
+        pageSize,
+        onPageChange,
+    }) {
+        const firstRecord =
+            totalRecords === 0
+                ? 0
+                : (page - 1) * pageSize + 1;
+
+        const lastRecord = Math.min(
+            page * pageSize,
+            totalRecords
+        );
+
+        return (
+            <div className="mt-5 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-slate-500">
+                    Showing {firstRecord}–{lastRecord} of{" "}
+                    {totalRecords} transactions
+                </p>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        disabled={page <= 1}
+                        onClick={() =>
+                            onPageChange(page - 1)
+                        }
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        <ChevronLeft size={16} />
+                        Previous
+                    </button>
+
+                    <span className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold">
+                        Page {page} of {totalPages}
+                    </span>
+
+                    <button
+                        type="button"
+                        disabled={page >= totalPages}
+                        onClick={() =>
+                            onPageChange(page + 1)
+                        }
+                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        Next
+                        <ChevronRight size={16} />
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    function WalletLoadingState() {
+        return (
+            <div className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {[1, 2, 3, 4].map((item) => (
+                        <div
+                            key={item}
+                            className="animate-pulse rounded-2xl bg-white p-5 shadow"
+                        >
+                            <div className="h-4 w-28 rounded bg-slate-200" />
+                            <div className="mt-4 h-8 w-40 rounded bg-slate-200" />
+                        </div>
+                    ))}
+                </div>
+
+                <div className="animate-pulse rounded-2xl bg-white p-6 shadow">
+                    <div className="h-6 w-48 rounded bg-slate-200" />
+
+                    <div className="mt-6 space-y-4">
+                        {[1, 2, 3, 4, 5].map((item) => (
+                            <div
+                                key={item}
+                                className="h-14 rounded-xl bg-slate-100"
+                            />
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    function WalletErrorState({
+        message,
+        onRetry,
+    }) {
+        return (
+            <div className="flex min-h-[420px] flex-col items-center justify-center rounded-2xl bg-white p-8 text-center shadow">
+                <div className="rounded-full bg-red-100 p-5 text-red-600">
+                    <AlertTriangle size={38} />
+                </div>
+
+                <h3 className="mt-5 text-xl font-bold">
+                    Unable to load wallet
+                </h3>
+
+                <p className="mt-2 max-w-md text-slate-500">
+                    {message}
+                </p>
+
+                <button
+                    type="button"
+                    onClick={onRetry}
+                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-3 font-semibold text-white"
+                >
+                    <RotateCcw size={17} />
+                    Retry
+                </button>
+            </div>
+        );
+    }
+
+    function WalletEmptyState({ hasSearch }) {
+        return (
+            <div className="mt-6 flex min-h-[320px] flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-slate-50 p-8 text-center">
+                <div className="rounded-full bg-blue-100 p-5 text-blue-600">
+                    <CreditCard size={38} />
+                </div>
+
+                <h3 className="mt-5 text-xl font-bold">
+                    {hasSearch
+                        ? "No matching transactions"
+                        : "No transactions yet"}
+                </h3>
+
+                <p className="mt-2 max-w-md text-slate-500">
+                    {hasSearch
+                        ? "Change your search term or transaction filter."
+                        : "Payments, withdrawals and wallet adjustments will appear here when this worker begins transacting."}
+                </p>
+            </div>
+        );
+    }
+
+    function TransactionDetailCard({
+        label,
+        value,
+    }) {
+        return (
+            <div className="rounded-xl bg-slate-50 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {label}
+                </p>
+
+                <p className="mt-2 break-words font-semibold text-slate-900">
+                    {value}
+                </p>
+            </div>
+        );
+    }
+
+    function formatCurrency(value) {
+        return new Intl.NumberFormat("en-NG", {
+            style: "currency",
+            currency: "NGN",
+            maximumFractionDigits: 2,
+        }).format(Number(value || 0));
+    }
+
+    function formatDateTime(value) {
+        if (!value) {
+            return "Not available";
+        }
+
+        const date = new Date(value);
+
+        if (Number.isNaN(date.getTime())) {
+            return String(value);
+        }
+
+        return new Intl.DateTimeFormat("en-NG", {
+            dateStyle: "medium",
+            timeStyle: "short",
+        }).format(date);
+    }
+
+    function formatTransactionType(value) {
+        return capitalizeText(
+            String(value || "transaction")
+                .replaceAll("_", " ")
+                .replaceAll("-", " ")
+        );
+    }
+
+    function capitalizeText(value) {
+        return String(value || "")
+            .split(" ")
+            .filter(Boolean)
+            .map(
+                (word) =>
+                    word.charAt(0).toUpperCase() +
+                    word.slice(1)
+            )
+            .join(" ");
+    }
     function updateWorkerLocally(updatedWorker) {
         if (!updatedWorker) {
             return;
@@ -806,6 +1646,12 @@ export default function WorkerManagement() {
                         updatedWorker.verification_status ??
                         worker.verification_status,
 
+                    status: titleCase(
+                        updatedWorker.verification_status ??
+                        worker.verification_status ??
+                        worker.status
+                    ),
+
                     verification_level:
                         updatedWorker.verification_level ??
                         worker.verification_level,
@@ -813,6 +1659,22 @@ export default function WorkerManagement() {
                     availability_status:
                         updatedWorker.availability_status ??
                         worker.availability_status,
+
+                    guarantor_status: String(
+                        updatedWorker.guarantor_status ??
+                        updatedWorker.guarantorStatus ??
+                        worker.guarantor_status ??
+                        worker.guarantorStatus ??
+                        "not submitted"
+                    ).toLowerCase(),
+
+                    guarantorStatus: titleCase(
+                        updatedWorker.guarantor_status ??
+                        updatedWorker.guarantorStatus ??
+                        worker.guarantor_status ??
+                        worker.guarantorStatus ??
+                        "not submitted"
+                    ),
                 };
             })
         );
@@ -837,6 +1699,12 @@ export default function WorkerManagement() {
                     updatedWorker.verification_status ??
                     currentWorker.verification_status,
 
+                status: titleCase(
+                    updatedWorker.verification_status ??
+                    currentWorker.verification_status ??
+                    currentWorker.status
+                ),
+
                 verification_level:
                     updatedWorker.verification_level ??
                     currentWorker.verification_level,
@@ -844,8 +1712,89 @@ export default function WorkerManagement() {
                 availability_status:
                     updatedWorker.availability_status ??
                     currentWorker.availability_status,
+
+                guarantor_status: String(
+                    updatedWorker.guarantor_status ??
+                    updatedWorker.guarantorStatus ??
+                    currentWorker.guarantor_status ??
+                    currentWorker.guarantorStatus ??
+                    "not submitted"
+                ).toLowerCase(),
+
+                guarantorStatus: titleCase(
+                    updatedWorker.guarantor_status ??
+                    updatedWorker.guarantorStatus ??
+                    currentWorker.guarantor_status ??
+                    currentWorker.guarantorStatus ??
+                    "not submitted"
+                ),
             };
         });
+    }
+
+    async function handleApproveWorker(worker = selectedWorker) {
+        const workerId = worker?.worker_id || worker?.id;
+        const currentStatus = String(
+            worker?.verification_status || worker?.status || ""
+        ).toLowerCase();
+
+        if (!workerId) {
+            showToast("Worker ID is unavailable.");
+            return;
+        }
+
+        if (currentStatus === "approved") {
+            showToast("Worker is already approved.");
+            return;
+        }
+
+        try {
+            setWorkerActionLoading(true);
+            setWorkerActionType("approve");
+
+            const response = await approveAdminWorker(workerId);
+            const updatedWorker = response?.worker ?? {
+                ...worker,
+                worker_id: workerId,
+                verification_status: "approved",
+            };
+
+            updateWorkerLocally(updatedWorker);
+            await refreshSelectedWorker(workerId);
+            await loadWorkers();
+
+            showToast(
+                response?.message || "Worker approved successfully."
+            );
+        } catch (err) {
+            console.error("Unable to approve worker:", err);
+            showToast(
+                err?.response?.data?.detail ||
+                err?.response?.data?.message ||
+                err?.message ||
+                "Unable to approve worker."
+            );
+        } finally {
+            setWorkerActionLoading(false);
+            setWorkerActionType("");
+        }
+    }
+
+    async function refreshSelectedWorker(workerId) {
+        const details = await getAdminWorkerDetails(
+            workerId
+        );
+
+        const refreshedWorker =
+            details?.worker ??
+            details;
+
+        setSelectedWorker(
+            normalizeWorkerDetails(
+                details,
+                refreshedWorker
+            )
+        );
     }
 
     async function handleSuspendWorker(worker) {
@@ -991,6 +1940,26 @@ export default function WorkerManagement() {
         "Suspended",
     ];
 
+    const activationWorker = selectedWorker
+        ? (() => {
+            const guarantorStatus = String(
+                selectedWorker.guarantor_status ??
+                selectedWorker.guarantorStatus ??
+                "not submitted"
+            ).toLowerCase();
+
+            return {
+                ...selectedWorker,
+                guarantor_status: guarantorStatus,
+                guarantorStatus,
+            };
+        })()
+        : null;
+
+    const selectedWorkerActivation = activationWorker
+        ? getWorkerActivation(activationWorker)
+        : null;
+
     const filteredWorkers = workers.filter((worker) => {
         const matchesFilter =
             activeFilter === "All" ||
@@ -1022,6 +1991,24 @@ export default function WorkerManagement() {
         setSelectedDocument(null);
         setDocumentAction(null);
         setRejectionReason("");
+    };
+
+    const openDocumentsWorkspace = () => {
+        setSelectedDocument(documents[0] || null);
+        setDocumentWorkspaceMode("list");
+        setShowDocuments(true);
+    };
+
+    const closeDocumentsWorkspace = () => {
+        setShowDocuments(false);
+        setSelectedDocument(null);
+        setDocumentAction(null);
+        setRejectionReason("");
+        setDocumentWorkspaceMode("list");
+    };
+
+    const handleSelectDocument = (document) => {
+        setSelectedDocument(document);
     };
 
     const confirmDocumentAction = () => {
@@ -1305,11 +2292,136 @@ export default function WorkerManagement() {
                             </div>
 
                             <div className="grid md:grid-cols-4 gap-4">
-                                <SummaryCard title="Trust Score" value={`${selectedWorker.trustScore}%`} />
-                                <SummaryCard title="Profile Completion" value={`${selectedWorker.profileCompletion}%`} />
+                                <SummaryCard
+                                    title="Trust Score"
+                                    value={`${selectedWorkerActivation?.trustScore ?? selectedWorker.trustScore ?? 0}%`}
+                                />
+                                <SummaryCard
+                                    title="Profile Completion"
+                                    value={`${selectedWorkerActivation?.profileCompletion ?? selectedWorker.profileCompletion ?? 0}%`}
+                                />
                                 <SummaryCard title="Rating" value={`${selectedWorker.rating} ★`} />
                                 <SummaryCard title="Completed Jobs" value={selectedWorker.completedJobs} />
                             </div>
+
+                            {selectedWorkerActivation && (
+                                <DetailSection title="Worker Activation & Opportunity">
+                                    <div className="space-y-5">
+                                        <div className="grid gap-4 lg:grid-cols-[auto_1fr_auto] lg:items-center">
+                                            <div
+                                                className="grid h-28 w-28 place-items-center rounded-full"
+                                                style={{ background: `conic-gradient(#2563eb ${selectedWorkerActivation.score}%, #e2e8f0 0)` }}
+                                            >
+                                                <div className="grid h-20 w-20 place-items-center rounded-full bg-white text-center shadow-sm">
+                                                    <div>
+                                                        <p className="text-2xl font-bold text-slate-900">{selectedWorkerActivation.score}%</p>
+                                                        <p className="text-[10px] font-semibold uppercase text-slate-500">Activation</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <Badge className="bg-blue-100 text-blue-700">{selectedWorkerActivation.rewardTier}</Badge>
+                                                    <span className="text-sm font-semibold text-slate-700">{selectedWorkerActivation.level}</span>
+                                                </div>
+                                                <p className="mt-2 text-sm text-slate-600">{selectedWorkerActivation.opportunity}</p>
+                                                <div className="mt-3 flex items-center gap-2 text-sm">
+                                                    <span className="font-semibold text-slate-700">Matching Priority:</span>
+                                                    <span className="tracking-widest text-amber-500">{"★".repeat(selectedWorkerActivation.priority.stars)}{"☆".repeat(5 - selectedWorkerActivation.priority.stars)}</span>
+                                                    <span className="font-semibold text-slate-600">{selectedWorkerActivation.priority.label}</span>
+                                                </div>
+                                            </div>
+                                            <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm">
+                                                <p className="font-semibold text-slate-800">Next activation step</p>
+                                                <p className="text-slate-600">{selectedWorkerActivation.nextStep}</p>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <div className="mb-2 flex justify-between text-xs font-semibold text-slate-500">
+                                                <span>{selectedWorkerActivation.completed} of {selectedWorkerActivation.total} checks completed</span>
+                                                <span>{selectedWorkerActivation.maxOpportunity}</span>
+                                            </div>
+                                            <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+                                                <div
+                                                    className="h-full rounded-full bg-blue-600 transition-all"
+                                                    style={{ width: `${selectedWorkerActivation.score}%` }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            {selectedWorkerActivation.checks.map((check) => (
+                                                <div
+                                                    key={check.key}
+                                                    className={`rounded-xl border p-3 ${check.complete
+                                                        ? "border-green-200 bg-green-50"
+                                                        : "border-amber-200 bg-amber-50"
+                                                        }`}
+                                                >
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-slate-800">{check.label}</p>
+                                                            <p className="text-xs text-slate-500">Weight: {check.weight}%</p>
+                                                        </div>
+                                                        <StatusBadge value={check.complete ? "Complete" : "Pending"} />
+                                                    </div>
+                                                    {!check.complete && (
+                                                        <div className="mt-3 rounded-lg border border-amber-200 bg-white/70 px-3 py-2">
+                                                            <p className="text-[11px] font-bold uppercase tracking-wide text-amber-700">Required action</p>
+                                                            <p className="mt-1 text-xs text-slate-700">{check.action}</p>
+                                                            {Array.isArray(check.unlocks) && check.unlocks.length > 0 && (
+                                                                <div className="mt-2 border-t border-amber-100 pt-2">
+                                                                    <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700">Unlocks</p>
+                                                                    {check.unlocks.map((item) => (
+                                                                        <p key={item} className="mt-1 text-xs text-slate-600">✓ {item}</p>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {!selectedWorkerActivation.isFullyActivated && (
+                                            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                                                This worker is not automatically excluded. HelpNova may still match them to suitable lower-risk jobs, while workers with stronger activation records receive higher priority and broader opportunities.
+                                            </div>
+                                        )}
+
+                                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div>
+                                                    <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Admin Recommendation</p>
+                                                    <h4 className="mt-1 text-lg font-bold text-slate-900">Activation-based operational guidance</h4>
+                                                </div>
+                                                <Badge className={selectedWorkerActivation.riskLevel === "LOW" ? "bg-green-100 text-green-700" : selectedWorkerActivation.riskLevel === "MODERATE" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}>
+                                                    {selectedWorkerActivation.riskLevel} READINESS
+                                                </Badge>
+                                            </div>
+                                            <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                                <div className="rounded-xl bg-green-50 p-4">
+                                                    <p className="font-semibold text-green-800">Recommended opportunities</p>
+                                                    {selectedWorkerActivation.recommendedJobs.map((job) => (
+                                                        <p key={job} className="mt-2 text-sm text-green-800">✓ {job}</p>
+                                                    ))}
+                                                </div>
+                                                <div className="rounded-xl bg-amber-50 p-4">
+                                                    <p className="font-semibold text-amber-800">Hold or review before assignment</p>
+                                                    {selectedWorkerActivation.restrictedJobs.length > 0 ? selectedWorkerActivation.restrictedJobs.map((job) => (
+                                                        <p key={job} className="mt-2 text-sm text-amber-800">• {job}</p>
+                                                    )) : <p className="mt-2 text-sm text-green-700">No activation-based restrictions.</p>}
+                                                    {selectedWorkerActivation.riskReasons.length > 0 && (
+                                                        <p className="mt-3 text-xs text-slate-600">Outstanding checks: {selectedWorkerActivation.riskReasons.join(", ")}.</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <p className="mt-3 text-xs text-slate-500">This is rules-based activation guidance, not a final safety or employment decision. Authorized staff must review job context and verified records.</p>
+                                        </div>
+                                    </div>
+                                </DetailSection>
+                            )}
 
                             <div className="grid md:grid-cols-2 gap-6">
                                 <DetailSection title="Contact & Identity">
@@ -1320,10 +2432,10 @@ export default function WorkerManagement() {
                                 </DetailSection>
 
                                 <DetailSection title="Verification & Compliance">
-                                    <DetailLine icon={ShieldCheck} label="NIN" value={selectedWorker.ninStatus} success />
-                                    <DetailLine icon={FileCheck} label="Documents" value={selectedWorker.documentsStatus} success />
-                                    <DetailLine icon={Wallet} label="Bank" value={selectedWorker.bankStatus} success />
-                                    <DetailLine icon={UserCheck} label="Background Check" value={selectedWorker.backgroundCheck} success />
+                                    <ComplianceLine icon={ShieldCheck} label="Identity / NIN" value={selectedWorker.ninStatus} action="Submit and verify a valid government-issued identity record." />
+                                    <ComplianceLine icon={FileCheck} label="Supporting Documents" value={selectedWorker.documentsStatus} action="Upload the required supporting documents for HR review." />
+                                    <ComplianceLine icon={Wallet} label="Bank & Payout Setup" value={selectedWorker.bankStatus} action="Add and verify the worker's payout account." />
+                                    <ComplianceLine icon={UserCheck} label="Background Check" value={selectedWorker.backgroundCheck} action="Complete the required safety and background screening." />
                                 </DetailSection>
                             </div>
 
@@ -1372,7 +2484,7 @@ export default function WorkerManagement() {
 
                             <DetailSection title="Restricted HR/Admin Records">
                                 <div className="grid md:grid-cols-2 gap-4">
-                                    <InfoCard title="Guarantor Information" value={selectedWorker.guarantorStatus} note="Full details available to authorized HR/Admin officers only." />
+                                    <InfoCard title="Guarantor Information" value={selectedWorker.guarantorStatus} note={statusNeedsAction(selectedWorker.guarantorStatus) ? "Required action: Invite a guarantor to complete the secure form and submit supporting attachments." : "Full details available to authorized HR/Admin officers only."} />
                                     <InfoCard title="Emergency Contact" value={selectedWorker.emergencyContactStatus} note="Restricted for worker safety and emergency response only." />
                                 </div>
                             </DetailSection>
@@ -1406,80 +2518,365 @@ export default function WorkerManagement() {
                                     </div>
                                 )}
 
-                            <div className="grid md:grid-cols-4 gap-4 pb-10">
-                                {selectedWorker.verification_status === "suspended" ? (
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-10">
+                                {selectedWorker.status === "Suspended" ? (
                                     <button
                                         type="button"
-                                        disabled={workerActionLoading}
-                                        onClick={() =>
-                                            handleReactivateWorker(selectedWorker)
-                                        }
-                                        className="bg-green-600 text-white rounded-xl py-3 font-semibold disabled:opacity-50"
+                                        onClick={() => handleReactivateWorker(selectedWorker)}
+                                        className="rounded-xl bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
                                     >
-                                        {workerActionLoading &&
-                                            workerActionType === "reactivate"
-                                            ? "Reactivating..."
-                                            : "Reactivate"}
+                                        Reactivate
                                     </button>
-                                ) : selectedWorker.verification_status === "approved" ? (
+                                ) : selectedWorker.status === "Approved" ? (
                                     <button
                                         type="button"
                                         disabled
-                                        className="bg-green-100 text-green-700 rounded-xl py-3 font-semibold cursor-not-allowed"
+                                        className="cursor-not-allowed rounded-xl bg-green-100 py-3 font-semibold text-green-700"
                                     >
                                         Approved
                                     </button>
                                 ) : (
                                     <button
                                         type="button"
-                                        disabled={workerActionLoading}
-                                        onClick={() =>
-                                            handleApproveWorker(selectedWorker)
-                                        }
-                                        className="bg-green-600 text-white rounded-xl py-3 font-semibold disabled:opacity-50"
+                                        onClick={() => handleApproveWorker(selectedWorker)}
+                                        className="rounded-xl bg-green-600 py-3 font-semibold text-white hover:bg-green-700"
                                     >
-                                        {workerActionLoading &&
-                                            workerActionType === "approve"
-                                            ? "Approving..."
-                                            : "Approve"}
+                                        Approve
                                     </button>
                                 )}
 
-                                {selectedWorker.verification_status === "suspended" ? (
+                                {selectedWorker.status === "Suspended" ? (
                                     <button
                                         type="button"
                                         disabled
-                                        className="bg-red-100 text-red-700 rounded-xl py-3 font-semibold cursor-not-allowed"
+                                        className="cursor-not-allowed rounded-xl bg-red-100 py-3 font-semibold text-red-700"
                                     >
                                         Suspended
                                     </button>
                                 ) : (
                                     <button
                                         type="button"
-                                        disabled={workerActionLoading}
-                                        onClick={() =>
-                                            handleSuspendWorker(selectedWorker)
-                                        }
-                                        className="bg-red-600 text-white rounded-xl py-3 font-semibold disabled:opacity-50"
+                                        onClick={() => handleSuspendWorker(selectedWorker)}
+                                        className="rounded-xl bg-red-600 py-3 font-semibold text-white hover:bg-red-700"
                                     >
-                                        {workerActionLoading &&
-                                            workerActionType === "suspend"
-                                            ? "Suspending..."
-                                            : "Suspend"}
+                                        Suspend
                                     </button>
                                 )}
 
                                 <button
                                     type="button"
-                                    className="bg-blue-600 text-white rounded-xl py-3 font-semibold"
+                                    onClick={() => loadWorkerWallet(selectedWorker)}
+                                    className="bg-blue-600 text-white rounded-xl py-3 font-semibold hover:bg-blue-700 transition"
                                 >
                                     View Wallet
                                 </button>
 
+                                {showWallet && selectedWorker && (
+                                    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+                                        <div className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl">
+                                            <div className="flex items-center justify-between border-b bg-white p-5">
+                                                <div>
+                                                    <h2 className="text-2xl font-bold text-slate-900">
+                                                        Worker Wallet
+                                                    </h2>
+
+                                                    <p className="mt-1 text-sm text-slate-500">
+                                                        {selectedWorker.name ??
+                                                            selectedWorker.full_name ??
+                                                            "Worker"}
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={closeWorkerWallet}
+                                                        className="rounded-lg p-2 hover:bg-slate-100"
+                                                        aria-label="Close worker wallet"
+                                                    >
+                                                        <X size={24} />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div className="overflow-y-auto p-6">
+                                                {walletLoading ? (
+                                                    <WalletLoadingState />
+                                                ) : walletError ? (
+                                                    <WalletErrorState
+                                                        message={walletError}
+                                                        onRetry={() =>
+                                                            loadWorkerWallet(selectedWorker)
+                                                        }
+                                                    />
+                                                ) : (
+                                                    <div className="space-y-6">
+                                                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                                                            <WalletSummaryCard
+                                                                title="Available Balance"
+                                                                amount={walletSummary.availableBalance}
+                                                                icon={Wallet}
+                                                            />
+
+                                                            <WalletSummaryCard
+                                                                title="Lifetime Earnings"
+                                                                amount={walletSummary.totalEarnings}
+                                                                icon={TrendingUp}
+                                                                valueClassName="text-green-600"
+                                                            />
+
+                                                            <WalletSummaryCard
+                                                                title="Pending Withdrawal"
+                                                                amount={walletSummary.pendingWithdrawal}
+                                                                icon={Clock}
+                                                                valueClassName="text-orange-500"
+                                                            />
+
+                                                            <WalletSummaryCard
+                                                                title="Commission Paid"
+                                                                amount={walletSummary.commissionPaid}
+                                                                icon={ReceiptText}
+                                                                valueClassName="text-blue-600"
+                                                            />
+                                                        </div>
+
+                                                        <div className="rounded-2xl bg-white p-5 shadow">
+                                                            <div className="grid gap-4 md:grid-cols-2">
+                                                                <WalletInformationLine
+                                                                    label="Wallet ID"
+                                                                    value={
+                                                                        walletData?.wallet_id ??
+                                                                        walletData?.id ??
+                                                                        "Not available"
+                                                                    }
+                                                                />
+
+                                                                <WalletInformationLine
+                                                                    label="Worker ID"
+                                                                    value={
+                                                                        walletData?.worker_id ??
+                                                                        selectedWorker.worker_id ??
+                                                                        selectedWorker.id ??
+                                                                        "Not available"
+                                                                    }
+                                                                />
+
+                                                                <WalletInformationLine
+                                                                    label="Wallet Status"
+                                                                    value={
+                                                                        walletData?.status ??
+                                                                        "active"
+                                                                    }
+                                                                />
+
+                                                                <WalletInformationLine
+                                                                    label="Currency"
+                                                                    value={
+                                                                        walletData?.currency ??
+                                                                        "NGN"
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="rounded-2xl bg-white p-5 shadow">
+                                                            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                                                                <div>
+                                                                    <h3 className="text-xl font-bold text-slate-900">
+                                                                        Recent Transactions
+                                                                    </h3>
+
+                                                                    <p className="mt-1 text-sm text-slate-500">
+                                                                        Live wallet credits, debits,
+                                                                        payments and withdrawals.
+                                                                    </p>
+                                                                </div>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        loadWorkerWallet(
+                                                                            selectedWorker
+                                                                        )
+                                                                    }
+                                                                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700"
+                                                                >
+                                                                    <RotateCcw size={16} />
+                                                                    Refresh
+                                                                </button>
+                                                            </div>
+
+                                                            <div className="mt-5 flex flex-col gap-3 lg:flex-row">
+                                                                <div className="flex flex-1 items-center gap-3 rounded-xl border px-4 py-3">
+                                                                    <Search
+                                                                        size={19}
+                                                                        className="text-slate-400"
+                                                                    />
+
+                                                                    <input
+                                                                        type="search"
+                                                                        value={walletSearch}
+                                                                        onChange={(event) => {
+                                                                            setWalletSearch(
+                                                                                event.target.value
+                                                                            );
+                                                                            setWalletPage(1);
+                                                                        }}
+                                                                        placeholder="Search by transaction ID, reference, description or amount..."
+                                                                        className="w-full bg-transparent outline-none"
+                                                                    />
+                                                                </div>
+
+                                                                <div className="flex items-center gap-2 rounded-xl border px-3">
+                                                                    <Filter
+                                                                        size={18}
+                                                                        className="text-slate-400"
+                                                                    />
+
+                                                                    <select
+                                                                        value={walletFilter}
+                                                                        onChange={(event) => {
+                                                                            setWalletFilter(
+                                                                                event.target.value
+                                                                            );
+                                                                            setWalletPage(1);
+                                                                        }}
+                                                                        className="min-h-12 bg-transparent pr-4 text-sm font-semibold outline-none"
+                                                                    >
+                                                                        <option value="all">
+                                                                            All Transactions
+                                                                        </option>
+
+                                                                        <option value="credits">
+                                                                            Credits
+                                                                        </option>
+
+                                                                        <option value="debits">
+                                                                            Debits
+                                                                        </option>
+
+                                                                        <option value="pending">
+                                                                            Pending
+                                                                        </option>
+
+                                                                        <option value="completed">
+                                                                            Completed
+                                                                        </option>
+
+                                                                        <option value="payments">
+                                                                            Job Payments
+                                                                        </option>
+
+                                                                        <option value="withdrawals">
+                                                                            Withdrawals
+                                                                        </option>
+
+                                                                        <option value="commissions">
+                                                                            Commissions
+                                                                        </option>
+
+                                                                        <option value="refunds">
+                                                                            Refunds
+                                                                        </option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            {paginatedWalletTransactions.length ===
+                                                                0 ? (
+                                                                <WalletEmptyState
+                                                                    hasSearch={
+                                                                        Boolean(
+                                                                            walletSearch.trim()
+                                                                        ) ||
+                                                                        walletFilter !== "all"
+                                                                    }
+                                                                />
+                                                            ) : (
+                                                                <>
+                                                                    <div className="mt-5 overflow-x-auto">
+                                                                        <table className="w-full min-w-[900px] text-sm">
+                                                                            <thead>
+                                                                                <tr className="border-b text-left text-slate-500">
+                                                                                    <th className="px-3 py-3">
+                                                                                        Date
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3">
+                                                                                        Transaction
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3">
+                                                                                        Type
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3">
+                                                                                        Description
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3 text-right">
+                                                                                        Amount
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3">
+                                                                                        Status
+                                                                                    </th>
+
+                                                                                    <th className="px-3 py-3 text-center">
+                                                                                        Action
+                                                                                    </th>
+                                                                                </tr>
+                                                                            </thead>
+
+                                                                            <tbody>
+                                                                                {paginatedWalletTransactions.map(
+                                                                                    (transaction) => (
+                                                                                        <WalletTransactionRow
+                                                                                            key={
+                                                                                                transaction.id
+                                                                                            }
+                                                                                            transaction={
+                                                                                                transaction
+                                                                                            }
+                                                                                            onView={
+                                                                                                setSelectedTransaction
+                                                                                            }
+                                                                                        />
+                                                                                    )
+                                                                                )}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+
+                                                                    <WalletPagination
+                                                                        page={walletPage}
+                                                                        totalPages={
+                                                                            totalWalletPages
+                                                                        }
+                                                                        totalRecords={
+                                                                            filteredWalletTransactions.length
+                                                                        }
+                                                                        pageSize={
+                                                                            walletPageSize
+                                                                        }
+                                                                        onPageChange={
+                                                                            setWalletPage
+                                                                        }
+                                                                    />
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <button
                                     type="button"
-                                    onClick={() => setShowDocuments(true)}
-                                    className="bg-slate-900 text-white rounded-xl py-3 font-semibold"
+                                    onClick={openDocumentsWorkspace}
+                                    className="rounded-xl bg-slate-900 py-3 font-semibold text-white hover:bg-slate-800"
                                 >
                                     View Documents
                                 </button>
@@ -1489,107 +2886,489 @@ export default function WorkerManagement() {
                 </div>
             )}
 
-            {showDocuments && (
-                <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="sticky top-0 bg-white border-b p-5 flex justify-between items-center z-10">
+
+
+            {selectedTransaction && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+                        <div className="sticky top-0 flex items-center justify-between border-b bg-white p-5">
                             <div>
-                                <h2 className="text-2xl font-bold">Worker Documents Center</h2>
-                                <p className="text-slate-500">Verification and compliance records.</p>
+                                <h2 className="text-2xl font-bold">
+                                    Transaction Details
+                                </h2>
+
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {selectedTransaction.id}
+                                </p>
                             </div>
-                            <button onClick={() => setShowDocuments(false)} className="p-2 rounded-lg hover:bg-slate-100">
-                                <X size={22} />
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setSelectedTransaction(null)
+                                }
+                                className="rounded-lg p-2 hover:bg-slate-100"
+                            >
+                                <X size={23} />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4">
-                            {documents.map((doc) => (
-                                <DocumentRow key={doc.title} document={doc} onView={setSelectedDocument} />
-                            ))}
+                        <div className="space-y-5 p-6">
+                            <div className="rounded-2xl bg-slate-900 p-6 text-white">
+                                <p className="text-sm text-slate-300">
+                                    Transaction Amount
+                                </p>
+
+                                <h3 className="mt-2 text-3xl font-bold">
+                                    {selectedTransaction.direction ===
+                                        "debit"
+                                        ? "-"
+                                        : "+"}
+                                    {formatCurrency(
+                                        selectedTransaction.amount
+                                    )}
+                                </h3>
+
+                                <div className="mt-4">
+                                    <TransactionStatusBadge
+                                        status={
+                                            selectedTransaction.status
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <TransactionDetailCard
+                                    label="Transaction ID"
+                                    value={selectedTransaction.id}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Reference"
+                                    value={
+                                        selectedTransaction.reference
+                                    }
+                                />
+
+                                <TransactionDetailCard
+                                    label="Type"
+                                    value={formatTransactionType(
+                                        selectedTransaction.type
+                                    )}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Direction"
+                                    value={capitalizeText(
+                                        selectedTransaction.direction
+                                    )}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Description"
+                                    value={
+                                        selectedTransaction.description
+                                    }
+                                />
+
+                                <TransactionDetailCard
+                                    label="Date"
+                                    value={formatDateTime(
+                                        selectedTransaction.createdAt
+                                    )}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Job ID"
+                                    value={
+                                        selectedTransaction.jobId ??
+                                        "Not available"
+                                    }
+                                />
+
+                                <TransactionDetailCard
+                                    label="Customer"
+                                    value={
+                                        selectedTransaction.customerName ??
+                                        "Not available"
+                                    }
+                                />
+
+                                <TransactionDetailCard
+                                    label="Payment Method"
+                                    value={
+                                        selectedTransaction.paymentMethod ??
+                                        "Not available"
+                                    }
+                                />
+
+                                <TransactionDetailCard
+                                    label="Platform Fee"
+                                    value={formatCurrency(
+                                        selectedTransaction.platformFee
+                                    )}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Worker Amount"
+                                    value={formatCurrency(
+                                        selectedTransaction.workerAmount
+                                    )}
+                                />
+
+                                <TransactionDetailCard
+                                    label="Status"
+                                    value={capitalizeText(
+                                        selectedTransaction.status
+                                    )}
+                                />
+                            </div>
+
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setSelectedTransaction(null)
+                                    }
+                                    className="rounded-xl bg-slate-900 px-6 py-3 font-semibold text-white"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {selectedDocument && (
-                <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="sticky top-0 bg-white border-b p-5 flex items-center justify-between z-20">
+            {showDocuments && (
+                <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-3 md:p-6">
+                    <div className="bg-white rounded-2xl w-full max-w-7xl h-[92vh] overflow-hidden shadow-2xl flex flex-col">
+                        <div className="border-b bg-white px-5 py-4 flex items-center justify-between shrink-0">
                             <div>
-                                <h2 className="text-2xl font-bold">{selectedDocument.title}</h2>
-                                <p className="text-slate-500 text-sm">
-                                    {selectedDocument.status} • Uploaded {selectedDocument.uploadedOn}
+                                <h2 className="text-2xl font-bold text-slate-900">
+                                    Worker Documents Workspace
+                                </h2>
+
+                                <p className="text-sm text-slate-500 mt-1">
+                                    {selectedWorker?.name || "Worker"} · Verification and compliance records
                                 </p>
                             </div>
-                            <button onClick={closeDocumentPreview} className="p-2 rounded-lg hover:bg-slate-100">
+
+                            <button
+                                type="button"
+                                onClick={closeDocumentsWorkspace}
+                                className="p-2 rounded-lg hover:bg-slate-100 transition"
+                                aria-label="Close documents workspace"
+                            >
+
+
+
                                 <X size={24} />
                             </button>
                         </div>
 
-                        <div className="p-6">
-                            <div className="rounded-2xl border-2 border-dashed bg-slate-50 h-72 flex flex-col items-center justify-center text-slate-500">
-                                <FileCheck size={56} className="mb-4 text-blue-600" />
-                                <h3 className="font-bold text-lg">{selectedDocument.title}</h3>
-                                <p className="text-sm mt-2">No document preview available yet.</p>
-                                <p className="text-xs mt-1">Uploaded image/PDF will render here after backend storage integration.</p>
-                            </div>
+                        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_1fr]">
+                            <aside className="border-r bg-slate-50 overflow-y-auto">
+                                <div className="sticky top-0 bg-slate-50 border-b p-4 z-10">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <h3 className="font-bold text-slate-900">
+                                                Documents
+                                            </h3>
 
-                            <div className="grid grid-cols-2 gap-4 mt-6">
-                                <InfoCard title="Status" value={selectedDocument.status} />
-                                <InfoCard title="Verified By" value={selectedDocument.verifiedBy} />
-                                <InfoCard title="Uploaded On" value={selectedDocument.uploadedOn} />
-                                <InfoCard title="Access Level" value="HR/Admin Only" />
-                                <InfoCard title="File Type" value={selectedDocument.fileType || "Document"} />
-                                <InfoCard title="File Size" value={selectedDocument.fileSize || "Pending"} />
-                            </div>
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                {documents.length} record{documents.length === 1 ? "" : "s"}
+                                            </p>
+                                        </div>
 
-                            {(selectedDocument.rejectionReason || selectedDocument.adminComment) && (
-                                <div className={`mt-4 border rounded-xl p-4 ${selectedDocument.status === "Rejected"
-                                        ? "bg-red-50 border-red-200"
-                                        : "bg-green-50 border-green-200"
-                                    }`}>
-                                    <p className={`text-sm font-semibold ${selectedDocument.status === "Rejected" ? "text-red-600" : "text-green-700"
-                                        }`}>
-                                        HR/Admin Comment
-                                    </p>
-                                    <p className="text-slate-800 mt-1">
-                                        {selectedDocument.rejectionReason || selectedDocument.adminComment}
-                                    </p>
+                                        <Badge className="bg-blue-100 text-blue-700">
+                                            HR/Admin
+                                        </Badge>
+                                    </div>
                                 </div>
-                            )}
 
-                            <div className="mt-6 bg-slate-50 rounded-xl p-4">
-                                <h3 className="font-bold mb-3">Verification History</h3>
-                                <div className="space-y-3 text-sm">
-                                    <HistoryLine title="Document uploaded" date={selectedDocument.uploadedOn} />
-                                    <HistoryLine title={`Current status: ${selectedDocument.status}`} date="Latest action" />
-                                    <HistoryLine title={`Reviewed by: ${selectedDocument.verifiedBy}`} date="HR/Admin action" />
+                                <div className="p-3 space-y-2">
+                                    {documents.length === 0 ? (
+                                        <div className="rounded-xl border border-dashed bg-white p-6 text-center">
+                                            <FileCheck
+                                                size={36}
+                                                className="mx-auto text-slate-400"
+                                            />
+
+                                            <p className="font-semibold text-slate-700 mt-3">
+                                                No documents found
+                                            </p>
+
+                                            <p className="text-xs text-slate-500 mt-1">
+                                                Uploaded worker documents will appear here.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        documents.map((document) => {
+                                            const isSelected =
+                                                selectedDocument?.title === document.title;
+
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={document.title}
+                                                    onClick={() =>
+                                                        handleSelectDocument(document)
+                                                    }
+                                                    className={`w-full text-left rounded-xl border p-4 transition ${isSelected
+                                                            ? "border-blue-500 bg-blue-50 shadow-sm"
+                                                            : "border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/40"
+                                                        }`}
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <span
+                                                            className={`mt-1 w-3 h-3 shrink-0 rounded-full ${documentStatusColor(
+                                                                document.status
+                                                            )}`}
+                                                        />
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-semibold text-slate-900 truncate">
+                                                                {document.title}
+                                                            </p>
+
+                                                            <p className="text-sm text-slate-600 mt-1">
+                                                                {document.status}
+                                                            </p>
+
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                Uploaded {document.uploadedOn}
+                                                            </p>
+
+                                                            {document.rejectionReason && (
+                                                                <p className="text-xs text-red-600 mt-2 line-clamp-2">
+                                                                    {document.rejectionReason}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })
+                                    )}
                                 </div>
-                            </div>
+                            </aside>
 
-                            <div className="flex justify-end gap-3 mt-6 pb-2">
-                                <button className="bg-slate-900 text-white px-5 py-3 rounded-xl font-semibold">Download</button>
+                            <main className="overflow-y-auto bg-white">
+                                {!selectedDocument ? (
+                                    <div className="h-full min-h-[500px] flex flex-col items-center justify-center p-8 text-center">
+                                        <FileCheck
+                                            size={64}
+                                            className="text-slate-300"
+                                        />
 
-                                {selectedDocument.status !== "Verified" ? (
-                                    <button onClick={() => setDocumentAction("approve")} className="bg-green-600 text-white px-5 py-3 rounded-xl font-semibold">
-                                        Approve
-                                    </button>
+                                        <h3 className="text-xl font-bold text-slate-800 mt-5">
+                                            Select a document
+                                        </h3>
+
+                                        <p className="text-slate-500 mt-2 max-w-md">
+                                            Choose a worker document from the left panel to
+                                            inspect its status, metadata and verification
+                                            history.
+                                        </p>
+                                    </div>
                                 ) : (
-                                    <button disabled className="bg-green-100 text-green-700 px-5 py-3 rounded-xl font-semibold cursor-not-allowed">
-                                        Already Verified
-                                    </button>
-                                )}
+                                    <div className="p-5 md:p-7 space-y-6">
+                                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                                            <div>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <h3 className="text-2xl font-bold text-slate-900">
+                                                        {selectedDocument.title}
+                                                    </h3>
 
-                                {selectedDocument.status !== "Rejected" ? (
-                                    <button onClick={() => setDocumentAction("reject")} className="bg-red-600 text-white px-5 py-3 rounded-xl font-semibold">
-                                        Reject
-                                    </button>
-                                ) : (
-                                    <button disabled className="bg-red-100 text-red-700 px-5 py-3 rounded-xl font-semibold cursor-not-allowed">
-                                        Already Rejected
-                                    </button>
+                                                    <Badge
+                                                        className={documentStatusBadge(
+                                                            selectedDocument.status
+                                                        )}
+                                                    >
+                                                        {selectedDocument.status}
+                                                    </Badge>
+                                                </div>
+
+                                                <p className="text-sm text-slate-500 mt-2">
+                                                    Uploaded {selectedDocument.uploadedOn}
+                                                    {" · "}
+                                                    Reviewed by{" "}
+                                                    {selectedDocument.verifiedBy ||
+                                                        "Pending"}
+                                                </p>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    downloadWorkerDocument(
+                                                        selectedDocument
+                                                    )
+                                                }
+                                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition"
+                                            >
+                                                Download
+                                            </button>
+                                        </div>
+
+                                        <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 min-h-[340px] flex flex-col items-center justify-center p-8 text-center">
+                                            <FileCheck
+                                                size={64}
+                                                className="text-blue-600"
+                                            />
+
+                                            <h4 className="font-bold text-xl text-slate-900 mt-5">
+                                                {selectedDocument.title}
+                                            </h4>
+
+                                            <p className="text-sm text-slate-500 mt-2">
+                                                No document preview is available yet.
+                                            </p>
+
+                                            <p className="text-xs text-slate-400 mt-1 max-w-lg">
+                                                The uploaded image or PDF will render in this
+                                                workspace after worker document storage is
+                                                connected to the backend.
+                                            </p>
+                                        </div>
+
+                                        <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                                            <InfoCard
+                                                title="Status"
+                                                value={selectedDocument.status}
+                                            />
+
+                                            <InfoCard
+                                                title="Verified By"
+                                                value={
+                                                    selectedDocument.verifiedBy ||
+                                                    "Pending"
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                title="Uploaded On"
+                                                value={selectedDocument.uploadedOn}
+                                            />
+
+                                            <InfoCard
+                                                title="File Type"
+                                                value={
+                                                    selectedDocument.fileType ||
+                                                    "Document"
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                title="File Size"
+                                                value={
+                                                    selectedDocument.fileSize ||
+                                                    "Not available"
+                                                }
+                                            />
+
+                                            <InfoCard
+                                                title="Access Level"
+                                                value="HR/Admin Only"
+                                            />
+                                        </div>
+
+                                        {(selectedDocument.rejectionReason ||
+                                            selectedDocument.adminComment) && (
+                                                <div
+                                                    className={`rounded-xl border p-4 ${selectedDocument.status === "Rejected"
+                                                            ? "border-red-200 bg-red-50"
+                                                            : "border-green-200 bg-green-50"
+                                                        }`}
+                                                >
+                                                    <p
+                                                        className={`text-sm font-semibold ${selectedDocument.status ===
+                                                                "Rejected"
+                                                                ? "text-red-700"
+                                                                : "text-green-700"
+                                                            }`}
+                                                    >
+                                                        HR/Admin Comment
+                                                    </p>
+
+                                                    <p className="text-slate-800 mt-2">
+                                                        {selectedDocument.rejectionReason ||
+                                                            selectedDocument.adminComment}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                        <div className="rounded-2xl bg-slate-50 border p-5">
+                                            <h4 className="font-bold text-slate-900">
+                                                Verification History
+                                            </h4>
+
+                                            <div className="space-y-4 mt-4 text-sm">
+                                                <HistoryLine
+                                                    title="Document uploaded"
+                                                    date={selectedDocument.uploadedOn}
+                                                />
+
+                                                <HistoryLine
+                                                    title={`Current status: ${selectedDocument.status}`}
+                                                    date="Latest document state"
+                                                />
+
+                                                <HistoryLine
+                                                    title={`Reviewed by: ${selectedDocument.verifiedBy ||
+                                                        "Pending"
+                                                        }`}
+                                                    date="HR/Admin review"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t pt-4 pb-2 flex flex-wrap justify-end gap-3">
+                                            {selectedDocument.status !== "Verified" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setDocumentAction("approve")
+                                                    }
+                                                    className="rounded-xl bg-green-600 px-5 py-3 font-semibold text-white hover:bg-green-700 transition"
+                                                >
+                                                    Approve Document
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled
+                                                    className="rounded-xl bg-green-100 px-5 py-3 font-semibold text-green-700 cursor-not-allowed"
+                                                >
+                                                    Already Verified
+                                                </button>
+                                            )}
+
+                                            {selectedDocument.status !== "Rejected" ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setDocumentAction("reject")
+                                                    }
+                                                    className="rounded-xl bg-red-600 px-5 py-3 font-semibold text-white hover:bg-red-700 transition"
+                                                >
+                                                    Reject Document
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    disabled
+                                                    className="rounded-xl bg-red-100 px-5 py-3 font-semibold text-red-700 cursor-not-allowed"
+                                                >
+                                                    Already Rejected
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
                                 )}
-                            </div>
+                            </main>
                         </div>
                     </div>
                 </div>
@@ -1599,33 +3378,57 @@ export default function WorkerManagement() {
                 <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-6">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
                         <h2 className="text-2xl font-bold">
-                            Confirm {documentAction === "approve" ? "Approval" : "Rejection"}
+                            Confirm{" "}
+                            {documentAction === "approve"
+                                ? "Approval"
+                                : "Rejection"}
                         </h2>
 
                         <p className="text-slate-600 mt-3">
-                            Are you sure you want to {documentAction} <span className="font-bold">{selectedDocument.title}</span>?
+                            Are you sure you want to {documentAction}{" "}
+                            <span className="font-bold">
+                                {selectedDocument.title}
+                            </span>
+                            ?
                         </p>
 
                         {documentAction === "reject" && (
                             <div className="mt-4">
-                                <label className="block text-sm font-semibold text-slate-700 mb-2">Reason for rejection</label>
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                                    Reason for rejection
+                                </label>
+
                                 <textarea
                                     value={rejectionReason}
-                                    onChange={(e) => setRejectionReason(e.target.value)}
+                                    onChange={(event) =>
+                                        setRejectionReason(
+                                            event.target.value
+                                        )
+                                    }
                                     placeholder="Example: Blurry document, expired ID, name mismatch..."
                                     className="w-full border rounded-xl p-3 outline-none focus:ring-2 focus:ring-red-400"
-                                    rows="3"
+                                    rows={3}
                                 />
                             </div>
                         )}
 
                         <div className="flex justify-end gap-3 mt-6">
-                            <button onClick={() => setDocumentAction(null)} className="px-5 py-3 rounded-xl bg-slate-100 font-semibold">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setDocumentAction(null)
+                                }
+                                className="px-5 py-3 rounded-xl bg-slate-100 font-semibold"
+                            >
                                 Cancel
                             </button>
+
                             <button
+                                type="button"
                                 onClick={confirmDocumentAction}
-                                className={`px-5 py-3 rounded-xl text-white font-semibold ${documentAction === "approve" ? "bg-green-600" : "bg-red-600"
+                                className={`px-5 py-3 rounded-xl text-white font-semibold ${documentAction === "approve"
+                                        ? "bg-green-600"
+                                        : "bg-red-600"
                                     }`}
                             >
                                 Confirm
@@ -1639,20 +3442,48 @@ export default function WorkerManagement() {
 }
 
 function ProfilePlaceholder({ size }) {
-    const box = size === "large" ? "w-28 h-28" : "w-11 h-11";
-    const icon = size === "large" ? 38 : 20;
-    const shield = size === "large" ? "w-8 h-8" : "w-5 h-5";
-    const shieldIcon = size === "large" ? 16 : 11;
+    const box =
+        size === "large"
+            ? "w-28 h-28"
+            : "w-11 h-11";
+
+    const icon =
+        size === "large"
+            ? 38
+            : 20;
+
+    const shield =
+        size === "large"
+            ? "w-8 h-8"
+            : "w-5 h-5";
+
+    const shieldIcon =
+        size === "large"
+            ? 16
+            : 11;
 
     return (
-        <div className={`relative ${box} rounded-full bg-slate-100 border flex items-center justify-center shadow`}>
-            <Camera className="text-slate-400" size={icon} />
-            <span className={`absolute -bottom-1 -right-1 ${shield} rounded-full bg-green-600 border-2 border-white flex items-center justify-center`}>
-                <ShieldCheck size={shieldIcon} className="text-white" />
+        <div
+            className={`relative ${box} rounded-full bg-slate-100 border flex items-center justify-center shadow`}
+        >
+            <Camera
+                className="text-slate-400"
+                size={icon}
+            />
+
+            <span
+                className={`absolute -bottom-1 -right-1 ${shield} rounded-full bg-green-600 border-2 border-white flex items-center justify-center`}
+            >
+                <ShieldCheck
+                    size={shieldIcon}
+                    className="text-white"
+                />
             </span>
         </div>
     );
 }
+
+
 
 function SummaryCard({ title, value, color = "text-slate-900" }) {
     return (
@@ -1668,6 +3499,56 @@ function DetailSection({ title, children }) {
         <div className="bg-white rounded-2xl shadow p-5">
             <h3 className="text-lg font-bold mb-4">{title}</h3>
             {children}
+        </div>
+    );
+}
+
+function normalizedStatus(value) {
+    return String(value || "not submitted").trim().toLowerCase();
+}
+
+function statusNeedsAction(value) {
+    return !["approved", "verified", "complete", "completed", "active", "matched"].includes(normalizedStatus(value));
+}
+
+function StatusBadge({ value }) {
+    const status = normalizedStatus(value);
+    let classes = "bg-slate-100 text-slate-700";
+
+    if (["approved", "verified", "complete", "completed", "active", "matched"].includes(status)) {
+        classes = "bg-green-100 text-green-700";
+    } else if (["submitted", "uploaded", "under review", "pending review", "in review"].includes(status)) {
+        classes = "bg-blue-100 text-blue-700";
+    } else if (["pending", "invited", "not submitted", "not provided"].includes(status)) {
+        classes = "bg-amber-100 text-amber-700";
+    } else if (["rejected", "failed", "expired", "suspended"].includes(status)) {
+        classes = "bg-red-100 text-red-700";
+    }
+
+    return (
+        <span className={`rounded-full px-3 py-1 text-xs font-bold ${classes}`}>
+            {titleCase(value || "Not submitted")}
+        </span>
+    );
+}
+
+function ComplianceLine({ icon: Icon, label, value, action }) {
+    const needsAction = statusNeedsAction(value);
+
+    return (
+        <div className="border-b py-3 last:border-b-0">
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <Icon size={18} className={needsAction ? "text-amber-600" : "text-green-600"} />
+                    <span className="text-slate-600">{label}</span>
+                </div>
+                <StatusBadge value={value} />
+            </div>
+            {needsAction && (
+                <p className="mt-2 pl-8 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700">Required action:</span> {action}
+                </p>
+            )}
         </div>
     );
 }
@@ -1694,35 +3575,17 @@ function InfoCard({ title, value, note }) {
     );
 }
 
-function DocumentRow({ document, onView }) {
+function WalletInfoRow({ label, value }) {
     return (
-        <div className="flex items-center justify-between border rounded-xl p-4 hover:bg-slate-50">
-            <div>
-                <h4 className="font-semibold flex items-center gap-2">
-                    <span className={`w-3 h-3 rounded-full ${documentStatusColor(document.status)}`}></span>
-                    {document.title}
-                </h4>
-                <p className="text-sm text-slate-500 mt-1">Status: {document.status}</p>
-                <p className="text-xs text-slate-400">
-                    Uploaded: {document.uploadedOn} • Verified by: {document.verifiedBy}
-                </p>
-                {document.rejectionReason && (
-                    <p className="text-xs text-red-600 mt-1">Reason: {document.rejectionReason}</p>
-                )}
-            </div>
+        <div className="flex items-center justify-between gap-4 border-b py-3 last:border-b-0">
+            <span className="text-slate-500">{label}</span>
 
-            <div className="flex gap-2">
-                <button onClick={() => onView(document)} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-                    View
-                </button>
-                <button className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-                    Download
-                </button>
-            </div>
+            <span className="font-semibold text-right">
+                {value}
+            </span>
         </div>
     );
 }
-
 function Badge({ children, className }) {
     return <span className={`px-3 py-1 rounded-full text-xs font-bold ${className}`}>{children}</span>;
 }
@@ -1765,4 +3628,24 @@ function documentStatusColor(status) {
     if (status === "Uploaded") return "bg-blue-600";
     if (status === "Rejected") return "bg-red-600";
     return "bg-slate-500";
+}
+
+function documentStatusBadge(status) {
+    if (["Verified", "Approved", "Matched"].includes(status)) {
+        return "bg-green-100 text-green-700";
+    }
+
+    if (["Pending Review", "Submitted"].includes(status)) {
+        return "bg-yellow-100 text-yellow-700";
+    }
+
+    if (status === "Uploaded") {
+        return "bg-blue-100 text-blue-700";
+    }
+
+    if (status === "Rejected") {
+        return "bg-red-100 text-red-700";
+    }
+
+    return "bg-slate-100 text-slate-600";
 }

@@ -23,7 +23,11 @@ export default function WorkerCurrentJob() {
                 const jobs = await getAcceptedJobs();
 
                 const activeJob =
-                    jobs.find((item) => item.assignment_status === "accepted") || null;
+                    jobs.find((item) =>
+                        ["accepted", "on_my_way", "arrived", "started", "in_progress"].includes(
+                            String(item.assignment_status || item.status || "").toLowerCase()
+                        )
+                    ) || null;
 
                 setJob(activeJob);
             } catch (error) {
@@ -45,25 +49,25 @@ export default function WorkerCurrentJob() {
             setMessage("");
 
             if (actionName === "on_my_way") {
-                await markWorkerOnMyWay(job.job_id, job.worker_id);
+                await markWorkerOnMyWay(job.job_id || job.id, job.worker_id);
                 setMessage("Status updated: On My Way");
                 setJob({ ...job, status: "on_my_way" });
             }
 
             if (actionName === "arrived") {
-                await markWorkerArrived(job.job_id, job.worker_id);
+                await markWorkerArrived(job.job_id || job.id, job.worker_id);
                 setMessage("Status updated: Arrived");
                 setJob({ ...job, status: "arrived" });
             }
 
             if (actionName === "start") {
-                await startWorkerJob(job.job_id, job.worker_id);
+                await startWorkerJob(job.job_id || job.id, job.worker_id);
                 setMessage("Job started successfully");
                 setJob({ ...job, status: "started" });
             }
 
             if (actionName === "complete") {
-                await completeWorkerJob(job.job_id, job.worker_id);
+                await completeWorkerJob(job.job_id || job.id, job.worker_id);
                 setMessage("Job completed successfully");
                 setJob({ ...job, status: "completed" });
             }

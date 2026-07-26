@@ -1,10 +1,6 @@
-import { api } from "./api";
+import api from "./api";
 
-export async function loginUser(email, password) {
-  const { data } = await api.post("/auth/login", {
-    email,
-    password,
-  });
-
-  return data;
+export async function loginUser(credentials) {
+    const { data } = await api.post("/auth/login", credentials);
+    return data;
 }

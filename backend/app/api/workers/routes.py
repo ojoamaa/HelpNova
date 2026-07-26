@@ -1,9 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.worker import WorkerCreate, WorkerResponse
-from app.schemas.worker_update import WorkerAvailabilityUpdate
+from app.schemas.worker import (
+    WorkerCreate,
+    WorkerProfileResponse,
+    WorkerProfileUpdate,
+    WorkerResponse,
+)
+from app.schemas.worker_update import (
+    CurrentWorkerAvailabilityUpdate,
+    WorkerAvailabilityUpdate,
+)
 
 from app.models.worker import Worker
 from app.models.worker_review import WorkerReview
@@ -12,6 +23,7 @@ from app.models.job import Job
 from app.models.user import User
 from datetime import datetime
 from app.models.payment import Payment
+from app.core.security import require_worker_user
 
 from app.services.worker_service import (
     create_worker_profile,
@@ -24,6 +36,160 @@ router = APIRouter(
     tags=["Workers"]
 )
 
+PROFILE_PHOTO_DIR = Path("uploads/worker_profiles")
+PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_PHOTO_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+def _current_worker(db: Session, current_user: User) -> Worker:
+    worker = db.query(Worker).filter(Worker.user_id == current_user.id).first()
+    if not worker:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Worker profile not found for the authenticated user.",
+        )
+    return worker
+
+
+def _profile_payload(worker: Worker) -> dict:
+    return {
+        "worker_id": worker.id,
+        "user_id": worker.user_id,
+        "full_name": worker.full_name,
+        "profession": worker.profession,
+        "years_experience": worker.years_experience or 0,
+        "phone_number": worker.phone_number,
+        "address": worker.address,
+        "state": worker.state,
+        "city": worker.city,
+        "area": worker.area,
+        "national_id_number": worker.national_id_number,
+        "nin": worker.nin,
+        "bvn": worker.bvn,
+        "next_of_kin_name": worker.next_of_kin_name,
+        "next_of_kin_phone": worker.next_of_kin_phone,
+        "profile_photo": worker.profile_photo,
+        "profile_photo_url": worker.profile_photo_url,
+        "id_photo_url": worker.id_photo_url,
+        "verification_status": worker.verification_status,
+        "verification_level": worker.verification_level,
+        "guarantor_status": worker.guarantor_status or "not_started",
+        "availability_status": worker.availability_status,
+        "average_rating": worker.average_rating or 0,
+        "completed_jobs": worker.completed_jobs or 0,
+    }
+
+
+@router.get("/profile", response_model=WorkerProfileResponse)
+def get_current_worker_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_worker_user),
+):
+    return _profile_payload(_current_worker(db, current_user))
+
+
+@router.patch("/profile", response_model=WorkerProfileResponse)
+def update_current_worker_profile(
+    update_data: WorkerProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_worker_user),
+):
+    worker = _current_worker(db, current_user)
+    changes = update_data.model_dump(exclude_unset=True)
+
+    for field, value in changes.items():
+        if field in {"full_name", "profession"} and value is not None and not value.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{field} cannot be empty.",
+            )
+        setattr(worker, field, value.strip() if isinstance(value, str) else value)
+
+    if "full_name" in changes:
+        current_user.full_name = worker.full_name
+    if "phone_number" in changes and changes["phone_number"]:
+        worker.phone_number = changes["phone_number"].strip()
+
+    db.commit()
+    db.refresh(worker)
+    return _profile_payload(worker)
+
+
+@router.post("/profile/photo", response_model=WorkerProfileResponse)
+async def upload_current_worker_photo(
+    request: Request,
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_worker_user),
+):
+    worker = _current_worker(db, current_user)
+    extension = ALLOWED_PHOTO_TYPES.get(photo.content_type or "")
+    if not extension:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only JPEG, PNG, and WebP profile photos are allowed.",
+        )
+
+    content = await photo.read(MAX_PROFILE_PHOTO_BYTES + 1)
+    await photo.close()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded photo is empty.")
+    if len(content) > MAX_PROFILE_PHOTO_BYTES:
+        raise HTTPException(status_code=413, detail="Profile photo must not exceed 5 MB.")
+
+    filename = f"{worker.id}_{uuid4().hex}{extension}"
+    destination = PROFILE_PHOTO_DIR / filename
+    destination.write_bytes(content)
+
+    previous_path = worker.profile_photo
+    if previous_path and previous_path.startswith("/uploads/worker_profiles/"):
+        old_file = Path(previous_path.lstrip("/"))
+        if old_file.exists() and old_file != destination:
+            old_file.unlink(missing_ok=True)
+
+    relative_url = f"/uploads/worker_profiles/{filename}"
+    absolute_url = str(request.base_url).rstrip("/") + relative_url
+    worker.profile_photo = relative_url
+    worker.profile_photo_url = absolute_url
+    current_user.profile_photo_url = absolute_url
+
+    db.commit()
+    db.refresh(worker)
+    return _profile_payload(worker)
+
+
+@router.patch(
+    "/availability",
+    response_model=WorkerProfileResponse,
+)
+def update_current_worker_availability(
+    update_data: CurrentWorkerAvailabilityUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_worker_user),
+):
+    worker = _current_worker(db, current_user)
+
+    normalized_status = (
+        update_data.availability_status
+        or ""
+    ).strip().lower()
+
+    if normalized_status not in {"online", "offline"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "availability_status must be either "
+                "'online' or 'offline'."
+            ),
+        )
+
+    worker.availability_status = normalized_status
+
+    db.commit()
+    db.refresh(worker)
+
+    return _profile_payload(worker)
 
 @router.post(
     "/register",
@@ -267,13 +433,21 @@ def update_availability(
 @router.get("/user/{user_id}")
 def get_worker_by_user_id(
     user_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    return (
+    worker = (
         db.query(Worker)
         .filter(Worker.user_id == user_id)
         .first()
     )
+
+    if not worker:
+        raise HTTPException(
+            status_code=404,
+            detail="Worker profile not found for this user.",
+        )
+
+    return worker
 
 
 @router.get("/{worker_id}/reputation")

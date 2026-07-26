@@ -22,6 +22,7 @@ class Worker(Base):
     next_of_kin_phone = Column(String, nullable=True)
 
     verification_note = Column(String, nullable=True)
+    guarantor_status = Column(String, default="not_started")
 
     id = Column(String, primary_key=True)
     user_id = Column(String, ForeignKey("users.id"), unique=True)
